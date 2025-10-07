@@ -18,6 +18,7 @@ interface Candidate {
 }
 
 interface User {
+  uid: string;
   name: string;
   cnic: string;
   isAdmin: boolean;
@@ -37,27 +38,49 @@ export default function CastVote() {
   const headerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
-      router.push('/signin');
-      return;
-    }
+    const loadVotingData = async () => {
+      try {
+        const userData = localStorage.getItem('user');
+        if (!userData) {
+          router.push('/signin');
+          return;
+        }
+        
+        setUser(JSON.parse(userData));
+        
+        // Import services dynamically to avoid SSR issues
+        const { DatabaseService } = await import('@/lib/database');
+        
+        // Get active election
+        const activeElection = await DatabaseService.getActiveElection();
+        if (!activeElection) {
+          setElectionStatus('inactive');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Get candidates for the active election
+        const allCandidates = await DatabaseService.getCandidates();
+        const electionCandidates = allCandidates.filter(candidate => 
+          activeElection.candidates.includes(candidate.id)
+        );
+        setCandidates(electionCandidates);
+        
+        // Check if user has already voted
+        const userVote = await DatabaseService.getUserVote(JSON.parse(userData).uid, activeElection.id);
+        setHasVoted(!!userVote);
+        
+        // Store election info for voting
+        localStorage.setItem('activeElection', JSON.stringify(activeElection));
+        
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error loading voting data:', error);
+        setIsLoading(false);
+      }
+    };
     
-    setUser(JSON.parse(userData));
-    
-    // Mock candidates data
-    setCandidates([
-      { id: '1', name: 'Dr. Sarah Ahmed', party: 'Progressive Party', symbol: '🌟', color: 'blue' },
-      { id: '2', name: 'Muhammad Ali Khan', party: 'Unity Alliance', symbol: '🏛️', color: 'green' },
-      { id: '3', name: 'Fatima Hassan', party: 'Democratic Front', symbol: '🕊️', color: 'purple' },
-      { id: '4', name: 'Ahmed Raza', party: 'National Movement', symbol: '⚡', color: 'orange' }
-    ]);
-    
-    // Check if user has already voted
-    const votedStatus = localStorage.getItem('hasVoted');
-    setHasVoted(votedStatus === 'true');
-    
-    setIsLoading(false);
+    loadVotingData();
 
     // Animate header
     if (headerRef.current) {
@@ -68,7 +91,7 @@ export default function CastVote() {
     }
 
     // Animate candidates
-    if (candidatesRef.current && !votedStatus) {
+    if (candidatesRef.current && !hasVoted) {
       gsap.fromTo(candidatesRef.current.children,
         { y: 100, opacity: 0, scale: 0.8, rotationY: 45 },
         { 
@@ -86,7 +109,7 @@ export default function CastVote() {
   }, [router]);
 
   const handleVote = async () => {
-    if (!selectedCandidate) return;
+    if (!selectedCandidate || !user) return;
     
     setIsVoting(true);
     
@@ -100,28 +123,51 @@ export default function CastVote() {
       });
     }
     
-    // Simulate blockchain transaction
-    setTimeout(() => {
-      const mockTransactionHash = '0x' + Math.random().toString(16).substr(2, 64);
-      setTransactionHash(mockTransactionHash);
-      setHasVoted(true);
-      localStorage.setItem('hasVoted', 'true');
-      localStorage.setItem('votedCandidate', selectedCandidate);
-      localStorage.setItem('transactionHash', mockTransactionHash);
+    try {
+      // Import services dynamically to avoid SSR issues
+      const { DatabaseService } = await import('@/lib/database');
       
-      // Success animation with confetti effect
-      if (candidatesRef.current) {
-        gsap.killTweensOf(candidatesRef.current);
-        gsap.to(candidatesRef.current, { 
-          scale: 1.2, 
-          rotation: 360, 
-          duration: 1.5,
-          ease: "back.out(1.7)"
-        });
+      // Get active election from localStorage
+      const activeElection = JSON.parse(localStorage.getItem('activeElection') || '{}');
+      
+      // Cast vote in Firestore
+      const voteResult = await DatabaseService.castVote({
+        voterId: user.uid,
+        candidateId: selectedCandidate,
+        electionId: activeElection.id,
+      });
+      
+      if (voteResult.success) {
+        // Generate mock transaction hash for blockchain simulation
+        const mockTransactionHash = '0x' + Math.random().toString(16).substr(2, 64);
+        setTransactionHash(mockTransactionHash);
+        setHasVoted(true);
+        
+        // Store vote info in localStorage for display
+        localStorage.setItem('votedCandidate', selectedCandidate);
+        localStorage.setItem('transactionHash', mockTransactionHash);
+        
+        // Success animation with confetti effect
+        if (candidatesRef.current) {
+          gsap.killTweensOf(candidatesRef.current);
+          gsap.to(candidatesRef.current, { 
+            scale: 1.2, 
+            rotation: 360, 
+            duration: 1.5,
+            ease: "back.out(1.7)"
+          });
+        }
+      } else {
+        // Error handling
+        console.error('Vote failed:', voteResult.error);
+        // You could show an error message to the user here
       }
-      
-      setIsVoting(false);
-    }, 3000);
+    } catch (error) {
+      console.error('Error casting vote:', error);
+      // You could show an error message to the user here
+    }
+    
+    setIsVoting(false);
   };
 
   const getColorClasses = (color: string) => {
