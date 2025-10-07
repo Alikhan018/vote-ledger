@@ -12,6 +12,8 @@
 /.next/
 /out/
 
+voting-ledger-firebase-adminsdk-fbsvc-38d642511e.json
+.env.local
 # production
 /build
 
