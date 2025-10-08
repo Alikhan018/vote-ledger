@@ -21,7 +21,7 @@ export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const cardRef = useRef<HTMLDivElement>(null);
-  const formRef = useRef<HTMLFormElement>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Animate card entrance
@@ -66,18 +66,20 @@ export default function SignIn() {
       gsap.to(cardRef.current, { scale: 1.02, duration: 0.3, yoyo: true, repeat: -1 });
     }
     
-    // Simulate API call
-    setTimeout(() => {
-      // Mock authentication
-      const mockUsers = [
-        { cnic: '12345-1234567-1', password: 'admin123', name: 'Admin User', isAdmin: true, email: 'admin@voteleger.com' },
-        { cnic: '98765-9876543-2', password: 'user123', name: 'John Doe', isAdmin: false, email: 'john@example.com' },
-      ];
+    try {
+      // Import SigninService to use API route with Admin SDK
+      const { SigninService } = await import('@/services/signin-service');
       
-      const user = mockUsers.find(u => u.cnic === formData.cnic && u.password === formData.password);
+      const result = await SigninService.signIn({
+        cnic: formData.cnic,
+        password: formData.password,
+      });
       
-      if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
+      gsap.killTweensOf(cardRef.current);
+      gsap.set(cardRef.current, { scale: 1 });
+      
+      if (result.success && result.user) {
+        // User data is automatically stored by SigninService
         
         // Success animation
         if (cardRef.current) {
@@ -96,17 +98,23 @@ export default function SignIn() {
           });
         }
       } else {
-        setErrors({ general: 'Invalid CNIC or password' });
+        setErrors({ general: result.error || 'Sign in failed' });
         // Error shake animation
         if (cardRef.current) {
-          gsap.killTweensOf(cardRef.current);
-          gsap.set(cardRef.current, { scale: 1 });
           gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
         }
       }
-      
-      setIsLoading(false);
-    }, 1500);
+    } catch (error) {
+      console.error('Sign in error:', error);
+      setErrors({ general: 'An unexpected error occurred. Please try again.' });
+      if (cardRef.current) {
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
+        gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+      }
+    }
+    
+    setIsLoading(false);
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -153,7 +161,7 @@ export default function SignIn() {
               </div>
             )}
             
-            <div ref={formRef} className="space-y-6">
+            <div className="space-y-6">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-300">
                   CNIC Number

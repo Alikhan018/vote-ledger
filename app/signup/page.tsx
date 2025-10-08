@@ -89,30 +89,53 @@ export default function SignUp() {
       gsap.to(cardRef.current, { scale: 1.02, duration: 0.5, yoyo: true, repeat: -1 });
     }
     
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      // Use API route with Admin SDK
+      const { SignupService } = await import('@/services/signup-service');
+      
+      const result = await SignupService.signUp({
+        name: formData.name,
+        cnic: formData.cnic,
+        email: formData.email,
+        password: formData.password,
+      });
+      
       gsap.killTweensOf(cardRef.current);
       gsap.set(cardRef.current, { scale: 1 });
       
-      // Success animation with confetti effect
-      setIsSuccess(true);
-      
-      if (cardRef.current) {
-        gsap.to(cardRef.current, { 
-          scale: 1.1, 
-          rotation: 360, 
-          duration: 1,
-          ease: "back.out(1.7)",
-          onComplete: () => {
-            setTimeout(() => {
-              router.push('/signin');
-            }, 2000);
-          }
-        });
+      if (result.success) {
+        // Success animation with confetti effect
+        setIsSuccess(true);
+        
+        if (cardRef.current) {
+          gsap.to(cardRef.current, { 
+            scale: 1.1, 
+            rotation: 360, 
+            duration: 1,
+            ease: "back.out(1.7)",
+            onComplete: () => {
+              setTimeout(() => {
+                router.push('/signin');
+              }, 2000);
+            }
+          });
+        }
+      } else {
+        // Error animation
+        setErrors({ general: result.error || 'Registration failed' });
+        if (cardRef.current) {
+          gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+        }
       }
-      
-      setIsLoading(false);
-    }, 2000);
+    } catch (error) {
+      console.error('Sign up error:', error);
+      setErrors({ general: 'An unexpected error occurred. Please try again.' });
+      if (cardRef.current) {
+        gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+      }
+    }
+    
+    setIsLoading(false);
   };
 
   const handleInputChange = (field: string, value: string) => {

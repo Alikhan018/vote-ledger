@@ -60,10 +60,22 @@ export default function Navigation() {
     }
   }, []);
 
-  const handleSignOut = () => {
-    localStorage.removeItem('user');
-    setUser(null);
-    window.location.href = '/signin';
+  const handleSignOut = async () => {
+    try {
+      // Import AuthService dynamically to avoid SSR issues
+      const { AuthService } = await import('@/lib/auth');
+      await AuthService.signOut();
+      
+      localStorage.removeItem('user');
+      setUser(null);
+      window.location.href = '/signin';
+    } catch (error) {
+      console.error('Sign out error:', error);
+      // Fallback to localStorage cleanup
+      localStorage.removeItem('user');
+      setUser(null);
+      window.location.href = '/signin';
+    }
   };
 
   const navigationItems = [
