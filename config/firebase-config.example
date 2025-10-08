@@ -11,3 +11,4 @@ NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=your_measurement_id
 
 # Optional: Firebase Emulator Settings
 USE_FIREBASE_EMULATOR=true
+

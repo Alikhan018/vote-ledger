@@ -67,17 +67,19 @@ export default function SignIn() {
     }
     
     try {
-      // Import AuthService dynamically to avoid SSR issues
-      const { AuthService } = await import('@/lib/auth');
+      // Import SigninService to use API route with Admin SDK
+      const { SigninService } = await import('@/services/signin-service');
       
-      const result = await AuthService.signIn(formData.cnic, formData.password);
+      const result = await SigninService.signIn({
+        cnic: formData.cnic,
+        password: formData.password,
+      });
       
       gsap.killTweensOf(cardRef.current);
       gsap.set(cardRef.current, { scale: 1 });
       
       if (result.success && result.user) {
-        // Store user data in localStorage for compatibility with existing code
-        localStorage.setItem('user', JSON.stringify(result.user));
+        // User data is automatically stored by SigninService
         
         // Success animation
         if (cardRef.current) {

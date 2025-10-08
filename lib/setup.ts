@@ -75,3 +75,4 @@ export const setupDevelopment = async () => {
   
   console.log('🎉 Development setup completed!');
 };
+

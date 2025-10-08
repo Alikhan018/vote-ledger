@@ -90,10 +90,10 @@ export default function SignUp() {
     }
     
     try {
-      // Import AuthService dynamically to avoid SSR issues
-      const { AuthService } = await import('@/lib/auth');
+      // Use API route with Admin SDK
+      const { SignupService } = await import('@/services/signup-service');
       
-      const result = await AuthService.signUp({
+      const result = await SignupService.signUp({
         name: formData.name,
         cnic: formData.cnic,
         email: formData.email,

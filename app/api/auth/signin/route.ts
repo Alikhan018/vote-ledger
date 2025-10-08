@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { COLLECTIONS, VoteLedgerUser } from '@/config/firebase-init';
 
+// Force dynamic rendering for this API route
+export const dynamic = 'force-dynamic';
+
 // Prefer global fetch (Node 18+). If not available, we'll dynamically import node-fetch at runtime.
 async function getFetch() {
   if (typeof fetch !== 'undefined') return fetch;
@@ -11,6 +14,14 @@ async function getFetch() {
 const FIREBASE_API_KEY = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
 
 export async function POST(req: NextRequest) {
+  // Check if Admin SDK is initialized
+  if (!adminAuth || !adminDb) {
+    console.error('Admin SDK not initialized');
+    return NextResponse.json({ 
+      success: false, 
+      error: 'Firebase Admin SDK not configured. Please add FIREBASE_SERVICE_ACCOUNT to .env.local'
+    }, { status: 500 });
+  }
   try {
     const { cnic, email, password } = await req.json();
 

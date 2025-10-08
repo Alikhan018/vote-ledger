@@ -1,16 +1,16 @@
-// Firebase initialization helper
+// Firebase initialization helper and type definitions
 import app, { auth, db, storage } from './firebase';
 
-// Export types for better TypeScript support
-export interface User {
-  uid: string;
-  email: string | null;
-  displayName: string | null;
-  photoURL: string | null;
-  isAdmin?: boolean;
-  cnic?: string;
-}
+// Collection names
+export const COLLECTIONS = {
+  USERS: 'users',
+  CANDIDATES: 'candidates',
+  ELECTIONS: 'elections',
+  VOTES: 'votes',
+  VOTE_COUNTS: 'voteCounts',
+} as const;
 
+// User interface for Vote Ledger
 export interface VoteLedgerUser {
   uid: string;
   name: string;
@@ -21,37 +21,40 @@ export interface VoteLedgerUser {
   updatedAt: Date;
 }
 
+// Candidate interface
 export interface Candidate {
-  id: string;
+  id?: string;
   name: string;
   party: string;
   symbol: string;
   color: string;
-  imageUrl?: string;
-  description?: string;
+  description: string;
 }
 
+// Election interface
 export interface Election {
-  id: string;
+  id?: string;
   title: string;
   description: string;
   startDate: Date;
   endDate: Date;
   status: 'upcoming' | 'active' | 'ended';
-  candidates: string[]; // Array of candidate IDs
+  candidates: string[];
   createdAt: Date;
   updatedAt: Date;
 }
 
+// Vote interface
 export interface Vote {
-  id: string;
+  id?: string;
   voterId: string;
   candidateId: string;
   electionId: string;
   timestamp: Date;
-  transactionHash?: string; // For blockchain integration
+  transactionHash?: string;
 }
 
+// Vote count interface
 export interface VoteCount {
   electionId: string;
   candidateId: string;
@@ -59,23 +62,7 @@ export interface VoteCount {
   lastUpdated: Date;
 }
 
-// Firebase collections
-export const COLLECTIONS = {
-  USERS: 'users',
-  CANDIDATES: 'candidates',
-  ELECTIONS: 'elections',
-  VOTES: 'votes',
-  VOTE_COUNTS: 'voteCounts',
-} as const;
-
-// Initialize Firebase and return services
-export const initializeFirebase = () => {
-  return {
-    app,
-    auth,
-    db,
-    storage,
-  };
-};
-
+// Export Firebase instances
 export { app, auth, db, storage };
+export default app;
+
