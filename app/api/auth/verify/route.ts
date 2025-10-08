@@ -7,11 +7,20 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
+    // Check if Admin SDK is initialized
+    if (!adminAuth || !adminDb) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Firebase Admin SDK not configured'
+      }, { status: 500 });
+    }
+
     const { idToken } = await req.json();
     if (!idToken) {
       return NextResponse.json({ success: false, error: 'Missing idToken' }, { status: 400 });
     }
 
+    // TypeScript needs assertion since we've already checked above
     const decoded = await adminAuth.verifyIdToken(idToken);
     const uid = decoded.uid;
 
