@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:firebase": "node ./scripts/test-firebase-connection.js"
+    "test:firebase": "node ./scripts/test-firebase-connection.js",
+    "setup-admin": "node ./scripts/setup-admin.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -78,6 +79,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/three": "^0.158.0"
+    "@types/three": "^0.158.0",
+    "dotenv": "^17.2.3"
   }
 }

@@ -250,20 +250,6 @@ export default function SignIn() {
               </div>
             </div>
             
-            {/* Demo Credentials */}
-            <div className="mt-8 p-4 bg-blockchain-primary/10 rounded-lg border border-blockchain-primary/30">
-              <h4 className="text-sm font-medium text-blockchain-accent mb-3">Demo Credentials:</h4>
-              <div className="text-xs text-gray-400 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-yellow-400">Admin:</span>
-                  <span>12345-1234567-1 / admin123</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-green-400">User:</span>
-                  <span>98765-9876543-2 / user123</span>
-                </div>
-              </div>
-            </div>
           </CardContent>
         </Card>
       </div>
