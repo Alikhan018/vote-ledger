@@ -95,7 +95,7 @@ export default function Navigation() {
   ];
 
   return (
-    <nav ref={navRef} className="sticky top-0 z-50 glass-card border-b border-blockchain-primary/30">
+    <nav ref={navRef} className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-300 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
@@ -109,7 +109,7 @@ export default function Navigation() {
                   className="h-10 w-10 rounded-full object-cover"
                 />
               </div>
-              <span className="text-xl font-bold gradient-text neon-text">Vote Ledger</span>
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Vote Ledger</span>
             </Link>
           </div>
 
@@ -120,8 +120,8 @@ export default function Navigation() {
                 key={href}
                 href={href}
                 className={`group flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 hover:scale-105 ${pathname === href
-                  ? 'text-blockchain-accent bg-blockchain-primary/20 neon-glow'
-                  : 'text-gray-300 hover:text-blockchain-accent hover:bg-blockchain-primary/10'
+                  ? 'text-white bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg'
+                  : 'text-gray-700 hover:text-white hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500'
                   }`}
               >
                 <Icon className="h-4 w-4 group-hover:rotate-12 transition-transform duration-300" />
@@ -130,15 +130,15 @@ export default function Navigation() {
             ))}
 
             {user && (
-              <div className="flex items-center space-x-4 pl-4 border-l border-blockchain-primary/30">
-                <span className="text-sm text-gray-300">
-                  Welcome, <span className="font-medium text-blockchain-accent">{user.name}</span>
+              <div className="flex items-center space-x-4 pl-4 border-l border-gray-300">
+                <span className="text-sm text-gray-700">
+                  Welcome, <span className="font-semibold text-blue-600">{user.name}</span>
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleSignOut}
-                  className="flex items-center space-x-2 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50 transition-all duration-300"
+                  className="flex items-center space-x-2 border-red-500 text-red-600 hover:bg-red-500 hover:text-white hover:border-red-500 transition-all duration-300"
                 >
                   <LogOut className="h-4 w-4" />
                   <span>Sign Out</span>
@@ -153,7 +153,7 @@ export default function Navigation() {
               variant="ghost"
               size="icon"
               onClick={() => setIsOpen(!isOpen)}
-              className="text-blockchain-accent hover:bg-blockchain-primary/20"
+              className="text-blue-600 hover:bg-blue-50"
             >
               {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </Button>
@@ -164,14 +164,14 @@ export default function Navigation() {
       {/* Mobile Navigation */}
       {isOpen && (
         <div className="md:hidden animate-slide-up">
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 glass-card border-t border-blockchain-primary/30">
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 bg-white/95 backdrop-blur-sm border-t border-gray-300">
             {navigationItems.map(({ href, label, icon: Icon }) => (
               <Link
                 key={href}
                 href={href}
                 className={`flex items-center space-x-3 px-3 py-3 rounded-lg text-base font-medium transition-all duration-300 ${pathname === href
-                  ? 'text-blockchain-accent bg-blockchain-primary/20 neon-glow'
-                  : 'text-gray-300 hover:text-blockchain-accent hover:bg-blockchain-primary/10'
+                  ? 'text-white bg-gradient-to-r from-blue-600 to-purple-600 shadow-lg'
+                  : 'text-gray-700 hover:text-white hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500'
                   }`}
                 onClick={() => setIsOpen(false)}
               >
@@ -181,15 +181,15 @@ export default function Navigation() {
             ))}
 
             {user && (
-              <div className="pt-4 border-t border-blockchain-primary/30">
+              <div className="pt-4 border-t border-gray-300">
                 <div className="px-3 py-2">
-                  <p className="text-sm text-gray-300">
-                    Welcome, <span className="font-medium text-blockchain-accent">{user.name}</span>
+                  <p className="text-sm text-gray-700">
+                    Welcome, <span className="font-semibold text-blue-600">{user.name}</span>
                   </p>
                 </div>
                 <button
                   onClick={handleSignOut}
-                  className="flex items-center space-x-3 w-full px-3 py-3 text-left text-base font-medium text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-300"
+                  className="flex items-center space-x-3 w-full px-3 py-3 text-left text-base font-medium text-red-600 hover:bg-red-50 rounded-lg transition-all duration-300"
                 >
                   <LogOut className="h-5 w-5" />
                   <span>Sign Out</span>

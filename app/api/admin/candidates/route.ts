@@ -95,8 +95,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    console.log('POST /api/admin/candidates - Request received');
+    
     // Check if Firebase Admin is initialized
     if (!adminAuth || !adminDb) {
+      console.log('POST: Firebase Admin not initialized');
       return NextResponse.json(
         { success: false, error: 'Server configuration error' },
         { status: 500 }
@@ -105,7 +108,9 @@ export async function POST(request: NextRequest) {
 
     // Get authorization header
     const authHeader = request.headers.get('authorization');
+    console.log('POST: Auth header exists:', !!authHeader);
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.log('POST: No valid auth header');
       return NextResponse.json(
         { success: false, error: 'Unauthorized - No token provided' },
         { status: 401 }
@@ -114,14 +119,16 @@ export async function POST(request: NextRequest) {
 
     // Extract and verify token
     const idToken = authHeader.substring(7);
+    console.log('POST: Token length:', idToken.length);
     
     let decodedToken;
     try {
       decodedToken = await adminAuth.verifyIdToken(idToken);
+      console.log('POST: Token verified for user:', decodedToken.uid);
     } catch (error: any) {
-      console.error('Token verification error:', error);
+      console.error('POST: Token verification error:', error.message);
       return NextResponse.json(
-        { success: false, error: 'Invalid or expired token' },
+        { success: false, error: `Token verification failed: ${error.message}` },
         { status: 401 }
       );
     }
@@ -129,13 +136,15 @@ export async function POST(request: NextRequest) {
     // Check if user is admin
     const userDoc = await adminDb.collection('users').doc(decodedToken.uid).get();
     if (!userDoc.exists) {
+      console.log('POST: User document not found for UID:', decodedToken.uid);
       return NextResponse.json(
-        { success: false, error: 'User not found' },
+        { success: false, error: 'User not found in database' },
         { status: 404 }
       );
     }
 
     const userData = userDoc.data();
+    console.log('POST: User data:', { uid: decodedToken.uid, isAdmin: userData?.isAdmin, name: userData?.name });
     if (!userData?.isAdmin) {
       return NextResponse.json(
         { success: false, error: 'Access denied - Admin privileges required' },
