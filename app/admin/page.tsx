@@ -143,30 +143,42 @@ export default function AdminPanel() {
     }
   }, [isLoading, activeTab]);
 
-  // Close emoji picker when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
-        setShowEmojiPicker(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowEmojiPicker(false);
-      }
-    };
-
-    if (showEmojiPicker) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleEscape);
+// Close emoji picker when clicking outside or scrolling
+useEffect(() => {
+  const handleClickOutside = (event: MouseEvent) => {
+    if (emojiPickerRef.current && 
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        !emojiButtonRef.current?.contains(event.target as Node)) {
+      setShowEmojiPicker(false);
     }
+  };
 
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [showEmojiPicker]);
+  const handleEscape = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      setShowEmojiPicker(false);
+    }
+  };
+
+  const handleScroll = (e: Event) => {
+    // Don't close if scrolling inside the emoji picker itself
+    if (emojiPickerRef.current && emojiPickerRef.current.contains(e.target as Node)) {
+      return;
+    }
+    setShowEmojiPicker(false);
+  };
+
+  if (showEmojiPicker) {
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    window.addEventListener('scroll', handleScroll, true); // Use capture phase
+  }
+
+  return () => {
+    document.removeEventListener('mousedown', handleClickOutside);
+    document.removeEventListener('keydown', handleEscape);
+    window.removeEventListener('scroll', handleScroll, true);
+  };
+}, [showEmojiPicker]);
 
   // Load candidates from API
   const loadCandidates = async () => {
@@ -249,7 +261,7 @@ export default function AdminPanel() {
       const response = await AdminCandidatesService.createCandidate(newCandidate);
       
       if (response.success && response.candidate) {
-        setCandidates(prev => [response.candidate!, ...prev]);
+        setCandidates(prev => [...prev, response.candidate!]);
         setNewCandidate({ name: '', party: '', symbol: '', description: '' });
         toast({
           title: 'Success!',
@@ -677,17 +689,22 @@ export default function AdminPanel() {
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="relative space-y-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        Party Symbol {newCandidate.symbol && <span className="ml-2 text-2xl">{newCandidate.symbol}</span>}
-                      </label>
+                    <div className="space-y-3">
+                      <div className="flex items-center space-x-2">
+                        <label className="text-sm font-medium text-gray-700">Party Symbol</label>
+                        {newCandidate.symbol && (
+                          <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-r from-purple-100 to-blue-100 rounded-lg border border-purple-200">
+                            <span className="text-lg">{newCandidate.symbol}</span>
+                          </div>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-500">Choose a symbol to represent the political party (e.g., 🌟, 🏛️, ⚡)</p>
                       <div className="flex space-x-2">
-                        <div className="flex-1 flex items-center border border-gray-300 rounded-lg px-4 py-3 bg-gray-50/50 h-12">
+                        <div className="flex-1 flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg px-4 py-3 bg-gray-50/30 h-12 transition-colors hover:border-purple-300 hover:bg-purple-50/30">
                           {newCandidate.symbol ? (
                             <span className="text-2xl">{newCandidate.symbol}</span>
                           ) : (
-                            <span className="text-gray-400 text-sm">Select party symbol</span>
+                            <span className="text-gray-400 text-sm font-medium">Click button to select symbol</span>
                           )}
                         </div>
                         <Button
@@ -705,7 +722,7 @@ export default function AdminPanel() {
                           }}
                           variant="outline"
                           disabled={candidateLoading}
-                          className="flex items-center space-x-2 min-w-[48px] h-12 border-gray-300 hover:border-purple-500"
+                          className="flex items-center justify-center min-w-[48px] h-12 border-gray-300 hover:border-purple-500 hover:bg-purple-50 transition-colors"
                         >
                           <Hash className="h-4 w-4" />
                         </Button>
@@ -715,7 +732,7 @@ export default function AdminPanel() {
                             onClick={() => setNewCandidate(prev => ({ ...prev, symbol: '' }))}
                             variant="outline"
                             disabled={candidateLoading}
-                            className="flex items-center space-x-2 min-w-[48px] h-12 text-red-600 hover:bg-red-50 border-red-300"
+                            className="flex items-center justify-center min-w-[48px] h-12 text-red-500 hover:bg-red-50 hover:border-red-300 border-red-200 transition-colors"
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -723,16 +740,25 @@ export default function AdminPanel() {
                       </div>
                       
                       {showEmojiPicker && typeof window !== 'undefined' && createPortal(
-                        <div 
-                          ref={emojiPickerRef}
-                          className="fixed z-[999999] shadow-2xl rounded-lg overflow-hidden border border-gray-200 bg-white"
-                          style={{
-                            top: emojiPickerPosition.top,
-                            left: emojiPickerPosition.left,
-                          }}
-                        >
-                          <EmojiPicker onEmojiClick={handleEmojiClick} />
-                        </div>,
+                        <>
+                          {/* Backdrop */}
+                          <div 
+                            className="fixed inset-0 z-[999998] bg-black/10"
+                            onClick={() => setShowEmojiPicker(false)}
+                          />
+                          {/* Emoji Picker */}
+                          <div 
+                            ref={emojiPickerRef}
+                            className="fixed z-[999999] shadow-2xl rounded-lg overflow-hidden border border-gray-200 bg-white max-h-[400px] overflow-y-auto"
+                            style={{
+                              top: Math.min(emojiPickerPosition.top, window.innerHeight - 450),
+                              left: Math.min(emojiPickerPosition.left, window.innerWidth - 350),
+                              maxWidth: '350px',
+                            }}
+                          >
+                            <EmojiPicker onEmojiClick={handleEmojiClick} />
+                          </div>
+                        </>,
                         document.body
                       )}
                     </div>
@@ -829,7 +855,7 @@ export default function AdminPanel() {
                               variant="outline"
                               size="sm"
                               disabled={candidateLoading}
-                              className="h-10 w-10 p-0 text-blue-600 hover:bg-blue-50 hover:border-blue-300 border-blue-200"
+                              className="h-10 w-10 p-0 text-blue-500 hover:bg-blue-50/30 hover:border-blue-200 border-blue-100 transition-all duration-200"
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -838,7 +864,7 @@ export default function AdminPanel() {
                               variant="outline"
                               size="sm"
                               disabled={candidateLoading}
-                              className="h-10 w-10 p-0 text-red-600 hover:bg-red-50 hover:border-red-300 border-red-200"
+                              className="h-10 w-10 p-0 text-red-400 hover:bg-red-50/30 hover:border-red-200 border-red-100 transition-all duration-200"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
