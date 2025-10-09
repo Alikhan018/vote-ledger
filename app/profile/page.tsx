@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import Navigation from '@/components/Navigation';
 import ThreeBackground from '@/components/ThreeBackground';
 import { gsap } from 'gsap';
-import { User, Mail, CreditCard, Shield, Edit, Settings, Eye, Zap, Star, Loader2 } from 'lucide-react';
+import { User, Mail, CreditCard, Shield, Edit, Settings, Eye, Zap, Star, Loader2, RefreshCw } from 'lucide-react';
 import { UserService } from '@/services';
 import { useToast } from '@/hooks/use-toast';
 
@@ -36,6 +36,28 @@ export default function Profile() {
   const actionsRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
+  // Function to refresh profile data
+  const refreshProfileData = async () => {
+    try {
+      const response = await UserService.getProfile();
+      if (response.success && response.profile) {
+        setUser(response.profile);
+        toast({
+          title: 'Profile Updated',
+          description: 'Your profile information has been refreshed',
+          className: 'bg-blue-500/10 border-blue-500/50',
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing profile:', error);
+      toast({
+        title: 'Refresh Failed',
+        description: 'Could not refresh profile data',
+        variant: 'destructive',
+      });
+    }
+  };
+
   useEffect(() => {
     const loadUserProfile = async () => {
       const userData = localStorage.getItem('user');
@@ -50,24 +72,24 @@ export default function Profile() {
         if (response.success && response.profile) {
           setUser(response.profile);
         } else {
-          // Fallback to localStorage data
+          // Fallback to localStorage data with real dates
           const parsedUser = JSON.parse(userData);
           setUser({
             ...parsedUser,
-            registrationDate: '2024-01-15',
+            registrationDate: parsedUser.createdAt ? new Date(parsedUser.createdAt).toISOString().split('T')[0] : 'Unknown',
             lastLogin: new Date().toISOString().split('T')[0],
-            votingHistory: 3
+            votingHistory: 0 // Will be updated by API when available
           });
         }
       } catch (error) {
         console.error('Error loading profile:', error);
-        // Fallback to localStorage data
+        // Fallback to localStorage data with real dates
         const parsedUser = JSON.parse(userData);
         setUser({
           ...parsedUser,
-          registrationDate: '2024-01-15',
+          registrationDate: parsedUser.createdAt ? new Date(parsedUser.createdAt).toISOString().split('T')[0] : 'Unknown',
           lastLogin: new Date().toISOString().split('T')[0],
-          votingHistory: 3
+          votingHistory: 0 // Will be updated by API when available
         });
       }
       
@@ -203,7 +225,18 @@ export default function Profile() {
             <h1 className="text-4xl font-bold gradient-text neon-text mb-4">
               Welcome back, {user.name}!
             </h1>
-            <p className="text-gray-400 text-lg">Manage your Vote Ledger account and voting preferences</p>
+            <p className="text-gray-400 text-lg mb-6">Manage your Vote Ledger account and voting preferences</p>
+            
+            {/* Refresh Button */}
+            <Button 
+              onClick={refreshProfileData}
+              variant="outline"
+              size="sm"
+              className="border-blockchain-primary/30 text-blockchain-accent hover:bg-blockchain-primary/10 hover:border-blockchain-primary/50 transition-all duration-300"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh Profile Data
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
