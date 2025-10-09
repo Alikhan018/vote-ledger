@@ -44,3 +44,12 @@ export type {
   ChangePasswordResponse
 } from './user-service';
 
+export { AdminCandidatesService } from './admin-candidates-service';
+export type { 
+  AdminCandidate,
+  AdminCreateCandidateRequest,
+  AdminUpdateCandidateRequest,
+  GetCandidatesResponse,
+  CandidateResponse
+} from './admin-candidates-service';
+

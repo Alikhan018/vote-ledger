@@ -17,8 +17,13 @@ import {
   Clock,
   Eye,
   BarChart3,
-  UserPlus
+  UserPlus,
+  Edit,
+  Trash2,
+  Loader2
 } from 'lucide-react';
+import { AdminCandidatesService, AdminCandidate, AdminCreateCandidateRequest } from '@/services';
+import { useToast } from '@/hooks/use-toast';
 
 interface User {
   name: string;
@@ -26,12 +31,6 @@ interface User {
   isAdmin: boolean;
 }
 
-interface Candidate {
-  id: string;
-  name: string;
-  party: string;
-  symbol: string;
-}
 
 interface ElectionStats {
   totalVoters: number;
@@ -42,22 +41,26 @@ interface ElectionStats {
 
 export default function AdminPanel() {
   const [user, setUser] = useState<User | null>(null);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [candidates, setCandidates] = useState<AdminCandidate[]>([]);
   const [electionStats, setElectionStats] = useState<ElectionStats>({
     totalVoters: 12500,
     totalVotes: 10000,
     turnoutPercentage: 80.0,
     status: 'closed'
   });
-  const [newCandidate, setNewCandidate] = useState({
+  const [newCandidate, setNewCandidate] = useState<AdminCreateCandidateRequest>({
     name: '',
     party: '',
-    symbol: ''
+    symbol: '',
+    description: ''
   });
+  const [editingCandidate, setEditingCandidate] = useState<AdminCandidate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [candidateLoading, setCandidateLoading] = useState(false);
   const router = useRouter();
+  const { toast } = useToast();
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -74,16 +77,38 @@ export default function AdminPanel() {
     
     setUser(parsedUser);
     
-    // Load existing candidates
-    setCandidates([
-      { id: '1', name: 'Dr. Sarah Ahmed', party: 'Progressive Party', symbol: '🌟' },
-      { id: '2', name: 'Muhammad Ali Khan', party: 'Unity Alliance', symbol: '🏛️' },
-      { id: '3', name: 'Fatima Hassan', party: 'Democratic Front', symbol: '🕊️' },
-      { id: '4', name: 'Ahmed Raza', party: 'National Movement', symbol: '⚡' }
-    ]);
+    // Load candidates from API
+    loadCandidates();
     
     setIsLoading(false);
   }, [router]);
+
+  // Load candidates from API
+  const loadCandidates = async () => {
+    try {
+      setCandidateLoading(true);
+      const response = await AdminCandidatesService.getCandidates();
+      
+      if (response.success && response.candidates) {
+        setCandidates(response.candidates);
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to load candidates',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error loading candidates:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load candidates',
+        variant: 'destructive',
+      });
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
 
   const handleElectionAction = async (action: string) => {
     setActionLoading(action);
@@ -105,22 +130,142 @@ export default function AdminPanel() {
     }, 2000);
   };
 
-  const handleAddCandidate = () => {
+  const handleAddCandidate = async () => {
     if (!newCandidate.name || !newCandidate.party || !newCandidate.symbol) {
+      toast({
+        title: 'Validation Error',
+        description: 'Name, party, and symbol are required',
+        variant: 'destructive',
+      });
       return;
     }
     
-    const candidate: Candidate = {
-      id: Date.now().toString(),
-      ...newCandidate
-    };
+    setCandidateLoading(true);
     
-    setCandidates(prev => [...prev, candidate]);
-    setNewCandidate({ name: '', party: '', symbol: '' });
+    try {
+      const response = await AdminCandidatesService.createCandidate(newCandidate);
+      
+      if (response.success && response.candidate) {
+        setCandidates(prev => [response.candidate!, ...prev]);
+        setNewCandidate({ name: '', party: '', symbol: '', description: '' });
+        toast({
+          title: 'Success!',
+          description: 'Candidate created successfully',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to create candidate',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error creating candidate:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create candidate',
+        variant: 'destructive',
+      });
+    } finally {
+      setCandidateLoading(false);
+    }
   };
 
-  const removeCandidate = (id: string) => {
-    setCandidates(prev => prev.filter(c => c.id !== id));
+  const handleDeleteCandidate = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete ${name}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setCandidateLoading(true);
+    
+    try {
+      const response = await AdminCandidatesService.deleteCandidate(id);
+      
+      if (response.success) {
+        setCandidates(prev => prev.filter(c => c.id !== id));
+        toast({
+          title: 'Success!',
+          description: 'Candidate deleted successfully',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to delete candidate',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error deleting candidate:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete candidate',
+        variant: 'destructive',
+      });
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  const handleEditCandidate = (candidate: AdminCandidate) => {
+    setEditingCandidate(candidate);
+    setNewCandidate({
+      name: candidate.name,
+      party: candidate.party,
+      symbol: candidate.symbol,
+      description: candidate.description || ''
+    });
+  };
+
+  const handleUpdateCandidate = async () => {
+    if (!editingCandidate) return;
+    
+    if (!newCandidate.name || !newCandidate.party || !newCandidate.symbol) {
+      toast({
+        title: 'Validation Error',
+        description: 'Name, party, and symbol are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setCandidateLoading(true);
+    
+    try {
+      const response = await AdminCandidatesService.updateCandidate(editingCandidate.id, newCandidate);
+      
+      if (response.success && response.candidate) {
+        setCandidates(prev => prev.map(c => c.id === editingCandidate.id ? response.candidate! : c));
+        setEditingCandidate(null);
+        setNewCandidate({ name: '', party: '', symbol: '', description: '' });
+        toast({
+          title: 'Success!',
+          description: 'Candidate updated successfully',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to update candidate',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error updating candidate:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update candidate',
+        variant: 'destructive',
+      });
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingCandidate(null);
+    setNewCandidate({ name: '', party: '', symbol: '', description: '' });
   };
 
   if (isLoading) {
@@ -362,21 +507,51 @@ export default function AdminPanel() {
                       placeholder="Candidate Name"
                       value={newCandidate.name}
                       onChange={(e) => setNewCandidate(prev => ({ ...prev, name: e.target.value }))}
+                      disabled={candidateLoading}
                     />
                     <Input
                       placeholder="Party Name"
                       value={newCandidate.party}
                       onChange={(e) => setNewCandidate(prev => ({ ...prev, party: e.target.value }))}
+                      disabled={candidateLoading}
                     />
                     <Input
                       placeholder="Symbol (emoji)"
                       value={newCandidate.symbol}
                       onChange={(e) => setNewCandidate(prev => ({ ...prev, symbol: e.target.value }))}
+                      disabled={candidateLoading}
                     />
-                    <Button onClick={handleAddCandidate} className="flex items-center space-x-2">
-                      <Plus className="h-4 w-4" />
-                      <span>Add Candidate</span>
+                    <Input
+                      placeholder="Description (optional)"
+                      value={newCandidate.description}
+                      onChange={(e) => setNewCandidate(prev => ({ ...prev, description: e.target.value }))}
+                      disabled={candidateLoading}
+                    />
+                  </div>
+                  
+                  <div className="flex space-x-2">
+                    <Button 
+                      onClick={editingCandidate ? handleUpdateCandidate : handleAddCandidate}
+                      disabled={candidateLoading}
+                      className="flex items-center space-x-2"
+                    >
+                      {candidateLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Plus className="h-4 w-4" />
+                      )}
+                      <span>{editingCandidate ? 'Update Candidate' : 'Add Candidate'}</span>
                     </Button>
+                    
+                    {editingCandidate && (
+                      <Button 
+                        onClick={cancelEdit}
+                        variant="outline"
+                        disabled={candidateLoading}
+                      >
+                        Cancel
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -388,25 +563,47 @@ export default function AdminPanel() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {candidates.map((candidate) => (
-                      <div key={candidate.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div className="flex items-center space-x-4">
-                          <span className="text-2xl">{candidate.symbol}</span>
-                          <div>
-                            <h4 className="font-semibold text-gray-900">{candidate.name}</h4>
-                            <p className="text-sm text-gray-600">{candidate.party}</p>
+                    {candidateLoading && candidates.length === 0 ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                        <span>Loading candidates...</span>
+                      </div>
+                    ) : (
+                      candidates.map((candidate) => (
+                        <div key={candidate.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-4">
+                            <span className="text-2xl">{candidate.symbol}</span>
+                            <div>
+                              <h4 className="font-semibold text-gray-900">{candidate.name}</h4>
+                              <p className="text-sm text-gray-600">{candidate.party}</p>
+                              {candidate.description && (
+                                <p className="text-xs text-gray-500 mt-1">{candidate.description}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex space-x-2">
+                            <Button
+                              onClick={() => handleEditCandidate(candidate)}
+                              variant="outline"
+                              size="sm"
+                              disabled={candidateLoading}
+                              className="text-blue-600 hover:bg-blue-50 hover:border-blue-300"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              onClick={() => handleDeleteCandidate(candidate.id, candidate.name)}
+                              variant="outline"
+                              size="sm"
+                              disabled={candidateLoading}
+                              className="text-red-600 hover:bg-red-50 hover:border-red-300"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
-                        <Button
-                          onClick={() => removeCandidate(candidate.id)}
-                          variant="outline"
-                          size="sm"
-                          className="text-red-600 hover:bg-red-50 hover:border-red-300"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
+                      ))
+                    )}
                     
                     {candidates.length === 0 && (
                       <div className="text-center py-8 text-gray-500">
