@@ -29,6 +29,7 @@ export default function Profile() {
   const [isLoading, setIsLoading] = useState(true);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [editFormData, setEditFormData] = useState({ name: '', email: '' });
   const router = useRouter();
   const profileRef = useRef<HTMLDivElement>(null);
@@ -38,23 +39,52 @@ export default function Profile() {
 
   // Function to refresh profile data
   const refreshProfileData = async () => {
+    console.log('Refresh button clicked - starting refresh...');
+    setIsRefreshing(true);
+    
     try {
+      // Check if user is authenticated
+      const token = localStorage.getItem('idToken');
+      if (!token) {
+        console.log('No auth token found');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please sign in again to refresh your profile',
+          variant: 'destructive',
+        });
+        router.push('/signin');
+        return;
+      }
+      
+      console.log('Calling UserService.getProfile()...');
       const response = await UserService.getProfile();
+      console.log('Refresh response:', response);
+      
       if (response.success && response.profile) {
+        console.log('Profile refresh successful:', response.profile);
         setUser(response.profile);
         toast({
           title: 'Profile Updated',
           description: 'Your profile information has been refreshed',
-          className: 'bg-blue-500/10 border-blue-500/50',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        console.log('Profile refresh failed:', response.error);
+        toast({
+          title: 'Refresh Failed',
+          description: response.error || 'Could not refresh profile data',
+          variant: 'destructive',
         });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error refreshing profile:', error);
       toast({
         title: 'Refresh Failed',
-        description: 'Could not refresh profile data',
+        description: error.message || 'Could not refresh profile data. Please try again.',
         variant: 'destructive',
       });
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -230,12 +260,13 @@ export default function Profile() {
             {/* Refresh Button */}
             <Button 
               onClick={refreshProfileData}
+              disabled={isRefreshing}
               variant="outline"
               size="sm"
               className="border-blockchain-primary/30 text-blockchain-accent hover:bg-blockchain-primary/10 hover:border-blockchain-primary/50 transition-all duration-300"
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Refresh Profile Data
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh Profile Data'}
             </Button>
           </div>
 
