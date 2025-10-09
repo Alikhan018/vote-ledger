@@ -9,9 +9,8 @@ import Navigation from '@/components/Navigation';
 import ThreeBackground from '@/components/ThreeBackground';
 import { gsap } from 'gsap';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, Shield, Zap } from 'lucide-react';
-import { auth } from '@/config/firebase';
-import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { useToast } from '@/hooks/use-toast';
+import { UserService } from '@/services';
 
 interface User {
   name: string;
@@ -47,7 +46,9 @@ export default function ChangePassword() {
       return;
     }
     
-    setUser(JSON.parse(userData));
+    const parsedUser = JSON.parse(userData);
+    console.log('Loaded user from localStorage:', parsedUser);
+    setUser(parsedUser);
 
     // Animate card entrance
     if (cardRef.current) {
@@ -93,7 +94,12 @@ export default function ChangePassword() {
   };
 
   const handleSubmit = async () => {
+    console.log('Button clicked! Starting password change process...');
+    console.log('Form data:', formData);
+    console.log('User:', user);
+    
     if (!validateForm()) {
+      console.log('Form validation failed');
       // Shake animation for errors
       if (formRef.current) {
         gsap.to(formRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
@@ -107,6 +113,7 @@ export default function ChangePassword() {
     }
     
     if (!user) {
+      console.log('No user found');
       toast({
         title: 'Error',
         description: 'User not found. Please sign in again.',
@@ -123,81 +130,72 @@ export default function ChangePassword() {
     }
     
     try {
-      // Get current Firebase user
-      const currentUser = auth.currentUser;
+      console.log('Calling UserService to change password...');
       
-      if (!currentUser || !currentUser.email) {
-        throw new Error('No authenticated user found. Please sign in again.');
-      }
+      // Call the API to change password
+      const response = await UserService.changePassword({
+        currentPassword: formData.currentPassword,
+        newPassword: formData.newPassword,
+        confirmPassword: formData.confirmPassword,
+      });
 
-      // Step 1: Re-authenticate user with current password
-      const credential = EmailAuthProvider.credential(
-        currentUser.email,
-        formData.currentPassword
-      );
+      console.log('Password change response:', response);
 
-      try {
-        await reauthenticateWithCredential(currentUser, credential);
-      } catch (reauthError: any) {
-        // Handle re-authentication errors
-        let errorMessage = 'Current password is incorrect';
+      if (response.success) {
+        // Stop loading animation
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
         
-        if (reauthError.code === 'auth/wrong-password') {
-          errorMessage = 'Current password is incorrect';
-        } else if (reauthError.code === 'auth/too-many-requests') {
-          errorMessage = 'Too many failed attempts. Please try again later';
-        } else if (reauthError.code === 'auth/network-request-failed') {
-          errorMessage = 'Network error. Please check your connection';
-        }
+        setIsSuccess(true);
+        setIsLoading(false);
         
-        setErrors({ currentPassword: errorMessage });
+        toast({
+          title: 'Success!',
+          description: response.message || 'Your password has been changed successfully',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
         
-        // Error shake animation
+        // Success animation
         if (cardRef.current) {
-          gsap.killTweensOf(cardRef.current);
-          gsap.set(cardRef.current, { scale: 1 });
-          gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+          gsap.to(cardRef.current, { 
+            scale: 1.1, 
+            rotation: 360, 
+            duration: 1,
+            ease: "back.out(1.7)",
+            onComplete: () => {
+              setTimeout(() => {
+                router.push('/profile');
+              }, 2000);
+            }
+          });
+        }
+      } else {
+        // Handle API errors
+        console.log('Password change failed:', response.error);
+        
+        // Stop loading animation
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
+        
+        // Set specific field errors
+        if (response.error?.includes('Current password')) {
+          setErrors({ currentPassword: response.error });
+        } else if (response.error?.includes('New password') || response.error?.includes('Password must')) {
+          setErrors({ newPassword: response.error });
         }
         
         toast({
-          title: 'Authentication Failed',
-          description: errorMessage,
+          title: 'Password Change Failed',
+          description: response.error || 'Failed to change password',
           variant: 'destructive',
         });
         
+        // Error shake animation
+        if (cardRef.current) {
+          gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+        }
+        
         setIsLoading(false);
-        return;
-      }
-
-      // Step 2: Update password using Firebase client SDK
-      await updatePassword(currentUser, formData.newPassword);
-      
-      // Stop loading animation
-      gsap.killTweensOf(cardRef.current);
-      gsap.set(cardRef.current, { scale: 1 });
-      
-      setIsSuccess(true);
-      setIsLoading(false);
-      
-      toast({
-        title: 'Success!',
-        description: 'Your password has been changed successfully',
-        className: 'bg-green-500/10 border-green-500/50',
-      });
-      
-      // Success animation
-      if (cardRef.current) {
-        gsap.to(cardRef.current, { 
-          scale: 1.1, 
-          rotation: 360, 
-          duration: 1,
-          ease: "back.out(1.7)",
-          onComplete: () => {
-            setTimeout(() => {
-              router.push('/profile');
-            }, 2000);
-          }
-        });
       }
     } catch (error: any) {
       console.error('Password change error:', error);
@@ -208,18 +206,9 @@ export default function ChangePassword() {
         gsap.set(cardRef.current, { scale: 1 });
       }
       
-      let errorMessage = 'Failed to change password. Please try again.';
-      
-      if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password is too weak';
-        setErrors({ newPassword: errorMessage });
-      } else if (error.code === 'auth/requires-recent-login') {
-        errorMessage = 'Please sign out and sign in again before changing password';
-      }
-      
       toast({
         title: 'Error',
-        description: errorMessage,
+        description: error.message || 'Failed to change password. Please try again.',
         variant: 'destructive',
       });
       
