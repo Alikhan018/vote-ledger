@@ -456,7 +456,9 @@ export default function ChangePassword() {
                     <li className={/[0-9]/.test(formData.newPassword) ? 'text-green-400' : ''}>
                       • One number (0-9)
                     </li>
-                    <li>• Different from current password</li>
+                    <li className={formData.newPassword && formData.newPassword !== formData.currentPassword ? 'text-green-400' : ''}>
+                      • Different from current password
+                    </li>
                   </ul>
                 </div>
               </div>
