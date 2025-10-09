@@ -9,9 +9,13 @@ import Navigation from '@/components/Navigation';
 import ThreeBackground from '@/components/ThreeBackground';
 import { gsap } from 'gsap';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, Shield, Zap } from 'lucide-react';
+import { auth } from '@/config/firebase';
+import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
+import { useToast } from '@/hooks/use-toast';
 
 interface User {
   name: string;
+  email: string;
   cnic: string;
   isAdmin: boolean;
 }
@@ -34,6 +38,7 @@ export default function ChangePassword() {
   const router = useRouter();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -67,6 +72,15 @@ export default function ChangePassword() {
     } else if (formData.newPassword === formData.currentPassword) {
       newErrors.newPassword = 'New password must be different from current password';
     }
+
+    // Enhanced password validation
+    const hasUpperCase = /[A-Z]/.test(formData.newPassword);
+    const hasLowerCase = /[a-z]/.test(formData.newPassword);
+    const hasNumber = /[0-9]/.test(formData.newPassword);
+    
+    if (formData.newPassword && (!hasUpperCase || !hasLowerCase || !hasNumber)) {
+      newErrors.newPassword = 'Password must contain uppercase, lowercase, and number';
+    }
     
     if (!formData.confirmPassword) {
       newErrors.confirmPassword = 'Please confirm your new password';
@@ -84,6 +98,20 @@ export default function ChangePassword() {
       if (formRef.current) {
         gsap.to(formRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
       }
+      toast({
+        title: 'Validation Error',
+        description: 'Please fix the errors in the form',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (!user) {
+      toast({
+        title: 'Error',
+        description: 'User not found. Please sign in again.',
+        variant: 'destructive',
+      });
       return;
     }
     
@@ -94,13 +122,35 @@ export default function ChangePassword() {
       gsap.to(cardRef.current, { scale: 1.02, duration: 0.5, yoyo: true, repeat: -1 });
     }
     
-    // Simulate API call
-    setTimeout(() => {
-      // Mock password verification
-      const mockCurrentPassword = user?.isAdmin ? 'admin123' : 'user123';
+    try {
+      // Get current Firebase user
+      const currentUser = auth.currentUser;
       
-      if (formData.currentPassword !== mockCurrentPassword) {
-        setErrors({ currentPassword: 'Current password is incorrect' });
+      if (!currentUser || !currentUser.email) {
+        throw new Error('No authenticated user found. Please sign in again.');
+      }
+
+      // Step 1: Re-authenticate user with current password
+      const credential = EmailAuthProvider.credential(
+        currentUser.email,
+        formData.currentPassword
+      );
+
+      try {
+        await reauthenticateWithCredential(currentUser, credential);
+      } catch (reauthError: any) {
+        // Handle re-authentication errors
+        let errorMessage = 'Current password is incorrect';
+        
+        if (reauthError.code === 'auth/wrong-password') {
+          errorMessage = 'Current password is incorrect';
+        } else if (reauthError.code === 'auth/too-many-requests') {
+          errorMessage = 'Too many failed attempts. Please try again later';
+        } else if (reauthError.code === 'auth/network-request-failed') {
+          errorMessage = 'Network error. Please check your connection';
+        }
+        
+        setErrors({ currentPassword: errorMessage });
         
         // Error shake animation
         if (cardRef.current) {
@@ -109,15 +159,31 @@ export default function ChangePassword() {
           gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
         }
         
+        toast({
+          title: 'Authentication Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        
         setIsLoading(false);
         return;
       }
+
+      // Step 2: Update password using Firebase client SDK
+      await updatePassword(currentUser, formData.newPassword);
       
+      // Stop loading animation
       gsap.killTweensOf(cardRef.current);
       gsap.set(cardRef.current, { scale: 1 });
       
       setIsSuccess(true);
       setIsLoading(false);
+      
+      toast({
+        title: 'Success!',
+        description: 'Your password has been changed successfully',
+        className: 'bg-green-500/10 border-green-500/50',
+      });
       
       // Success animation
       if (cardRef.current) {
@@ -133,7 +199,37 @@ export default function ChangePassword() {
           }
         });
       }
-    }, 1500);
+    } catch (error: any) {
+      console.error('Password change error:', error);
+      
+      // Stop loading animation
+      if (cardRef.current) {
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
+      }
+      
+      let errorMessage = 'Failed to change password. Please try again.';
+      
+      if (error.code === 'auth/weak-password') {
+        errorMessage = 'Password is too weak';
+        setErrors({ newPassword: errorMessage });
+      } else if (error.code === 'auth/requires-recent-login') {
+        errorMessage = 'Please sign out and sign in again before changing password';
+      }
+      
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+      
+      // Error shake animation
+      if (formRef.current) {
+        gsap.to(formRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+      }
+      
+      setIsLoading(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -341,16 +437,26 @@ export default function ChangePassword() {
               </Button>
             </div>
             
-            {/* Security Notice */}
+            {/* Password Requirements */}
             <div className="bg-blue-500/10 p-6 rounded-lg border border-blue-500/30">
               <div className="flex items-start space-x-3">
                 <AlertCircle className="h-5 w-5 text-blue-400 mt-0.5" />
                 <div className="text-blue-300">
-                  <p className="font-medium mb-2">Security Tips:</p>
+                  <p className="font-medium mb-2">Password Requirements:</p>
                   <ul className="text-sm space-y-1">
-                    <li>• Use a strong password with at least 6 characters</li>
-                    <li>• Include a mix of letters, numbers, and symbols</li>
-                    <li>• Don't reuse passwords from other accounts</li>
+                    <li className={formData.newPassword.length >= 6 ? 'text-green-400' : ''}>
+                      • At least 6 characters
+                    </li>
+                    <li className={/[A-Z]/.test(formData.newPassword) ? 'text-green-400' : ''}>
+                      • One uppercase letter (A-Z)
+                    </li>
+                    <li className={/[a-z]/.test(formData.newPassword) ? 'text-green-400' : ''}>
+                      • One lowercase letter (a-z)
+                    </li>
+                    <li className={/[0-9]/.test(formData.newPassword) ? 'text-green-400' : ''}>
+                      • One number (0-9)
+                    </li>
+                    <li>• Different from current password</li>
                   </ul>
                 </div>
               </div>
