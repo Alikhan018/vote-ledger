@@ -4,10 +4,15 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import Navigation from '@/components/Navigation';
 import ThreeBackground from '@/components/ThreeBackground';
 import { gsap } from 'gsap';
-import { User, Mail, CreditCard, Shield, Edit, Settings, Eye, Zap, Star } from 'lucide-react';
+import { User, Mail, CreditCard, Shield, Edit, Settings, Eye, Zap, Star, Loader2, RefreshCw } from 'lucide-react';
+import { UserService } from '@/services';
+import { useToast } from '@/hooks/use-toast';
 
 interface UserProfile {
   name: string;
@@ -22,26 +27,106 @@ interface UserProfile {
 export default function Profile() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [editFormData, setEditFormData] = useState({ name: '', email: '' });
   const router = useRouter();
   const profileRef = useRef<HTMLDivElement>(null);
   const statsRef = useRef<HTMLDivElement>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+
+  // Function to refresh profile data
+  const refreshProfileData = async () => {
+    console.log('Refresh button clicked - starting refresh...');
+    setIsRefreshing(true);
+    
+    try {
+      // Check if user is authenticated
+      const token = localStorage.getItem('idToken');
+      if (!token) {
+        console.log('No auth token found');
+        toast({
+          title: 'Authentication Required',
+          description: 'Please sign in again to refresh your profile',
+          variant: 'destructive',
+        });
+        router.push('/signin');
+        return;
+      }
+      
+      console.log('Calling UserService.getProfile()...');
+      const response = await UserService.getProfile();
+      console.log('Refresh response:', response);
+      
+      if (response.success && response.profile) {
+        console.log('Profile refresh successful:', response.profile);
+        setUser(response.profile);
+        toast({
+          title: 'Profile Updated',
+          description: 'Your profile information has been refreshed',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        console.log('Profile refresh failed:', response.error);
+        toast({
+          title: 'Refresh Failed',
+          description: response.error || 'Could not refresh profile data',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error refreshing profile:', error);
+      toast({
+        title: 'Refresh Failed',
+        description: error.message || 'Could not refresh profile data. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
-      router.push('/signin');
-      return;
-    }
-    
-    const parsedUser = JSON.parse(userData);
-    setUser({
-      ...parsedUser,
-      registrationDate: '2024-01-15',
-      lastLogin: new Date().toISOString().split('T')[0],
-      votingHistory: 3
-    });
-    setIsLoading(false);
+    const loadUserProfile = async () => {
+      const userData = localStorage.getItem('user');
+      if (!userData) {
+        router.push('/signin');
+        return;
+      }
+      
+      // Try to fetch fresh profile data from API
+      try {
+        const response = await UserService.getProfile();
+        if (response.success && response.profile) {
+          setUser(response.profile);
+        } else {
+          // Fallback to localStorage data with real dates
+          const parsedUser = JSON.parse(userData);
+          setUser({
+            ...parsedUser,
+            registrationDate: parsedUser.createdAt ? new Date(parsedUser.createdAt).toISOString().split('T')[0] : 'Unknown',
+            lastLogin: new Date().toISOString().split('T')[0],
+            votingHistory: 0 // Will be updated by API when available
+          });
+        }
+      } catch (error) {
+        console.error('Error loading profile:', error);
+        // Fallback to localStorage data with real dates
+        const parsedUser = JSON.parse(userData);
+        setUser({
+          ...parsedUser,
+          registrationDate: parsedUser.createdAt ? new Date(parsedUser.createdAt).toISOString().split('T')[0] : 'Unknown',
+          lastLogin: new Date().toISOString().split('T')[0],
+          votingHistory: 0 // Will be updated by API when available
+        });
+      }
+      
+      setIsLoading(false);
+    };
+
+    loadUserProfile();
 
     // Animate profile sections
     const tl = gsap.timeline();
@@ -69,6 +154,63 @@ export default function Profile() {
       );
     }
   }, [router]);
+
+  // Handle opening edit dialog
+  const handleOpenEditDialog = () => {
+    if (user) {
+      setEditFormData({
+        name: user.name,
+        email: user.email,
+      });
+      setIsEditDialogOpen(true);
+    }
+  };
+
+  // Handle profile update
+  const handleUpdateProfile = async () => {
+    if (!editFormData.name.trim() || !editFormData.email.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Name and email are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsUpdating(true);
+
+    try {
+      const response = await UserService.updateProfile({
+        name: editFormData.name.trim(),
+        email: editFormData.email.trim(),
+      });
+
+      if (response.success && response.profile) {
+        setUser(response.profile);
+        setIsEditDialogOpen(false);
+        
+        toast({
+          title: 'Success!',
+          description: 'Your profile has been updated successfully.',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        toast({
+          title: 'Update Failed',
+          description: response.error || 'Failed to update profile',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'An error occurred while updating profile',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -113,7 +255,19 @@ export default function Profile() {
             <h1 className="text-4xl font-bold gradient-text neon-text mb-4">
               Welcome back, {user.name}!
             </h1>
-            <p className="text-gray-400 text-lg">Manage your Vote Ledger account and voting preferences</p>
+            <p className="text-gray-400 text-lg mb-6">Manage your Vote Ledger account and voting preferences</p>
+            
+            {/* Refresh Button */}
+            <Button 
+              onClick={refreshProfileData}
+              disabled={isRefreshing}
+              variant="outline"
+              size="sm"
+              className="border-blockchain-primary/30 text-blockchain-accent hover:bg-blockchain-primary/10 hover:border-blockchain-primary/50 transition-all duration-300"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh Profile Data'}
+            </Button>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -181,8 +335,8 @@ export default function Profile() {
                     </Button>
                     <Button 
                       variant="outline" 
-                      className="flex items-center space-x-2 border-blockchain-primary/30 text-blockchain-accent hover:bg-blockchain-primary/10 hover:border-blockchain-primary/50 transition-all duration-300"
-                      disabled
+                      onClick={handleOpenEditDialog}
+                      className="flex items-center space-x-2 border-blockchain-primary/30 text-blockchain-accent hover:bg-blockchain-primary/10 hover:border-blockchain-primary/50 transition-all duration-300 hover:scale-105"
                     >
                       <Edit className="h-4 w-4" />
                       <span>Edit Profile</span>
@@ -248,6 +402,94 @@ export default function Profile() {
           </div>
         </div>
       </div>
+
+      {/* Edit Profile Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="glass-card border-blockchain-primary/30 max-w-md">
+          <DialogHeader>
+            <DialogTitle className="gradient-text text-2xl flex items-center space-x-2">
+              <Edit className="h-6 w-6 text-blockchain-primary" />
+              <span>Edit Profile</span>
+            </DialogTitle>
+            <DialogDescription className="text-gray-400">
+              Update your profile information. Changes will be saved immediately.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name" className="text-sm font-medium text-gray-300">
+                Full Name
+              </Label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blockchain-accent" />
+                <Input
+                  id="edit-name"
+                  type="text"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="pl-10 bg-dark-secondary/50 border-blockchain-primary/20 focus:border-blockchain-primary/50 text-white"
+                  placeholder="Enter your full name"
+                  disabled={isUpdating}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-email" className="text-sm font-medium text-gray-300">
+                Email Address
+              </Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blockchain-accent" />
+                <Input
+                  id="edit-email"
+                  type="email"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="pl-10 bg-dark-secondary/50 border-blockchain-primary/20 focus:border-blockchain-primary/50 text-white"
+                  placeholder="Enter your email"
+                  disabled={isUpdating}
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <p className="text-sm text-blue-300">
+                <Shield className="inline h-4 w-4 mr-2" />
+                Your CNIC cannot be changed for security reasons.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isUpdating}
+              className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateProfile}
+              disabled={isUpdating}
+              className="purple-gradient hover:scale-105 transition-all duration-300 neon-glow"
+            >
+              {isUpdating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

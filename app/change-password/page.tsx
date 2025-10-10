@@ -9,9 +9,12 @@ import Navigation from '@/components/Navigation';
 import ThreeBackground from '@/components/ThreeBackground';
 import { gsap } from 'gsap';
 import { Lock, Eye, EyeOff, CheckCircle, AlertCircle, Shield, Zap } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { UserService } from '@/services';
 
 interface User {
   name: string;
+  email: string;
   cnic: string;
   isAdmin: boolean;
 }
@@ -34,6 +37,7 @@ export default function ChangePassword() {
   const router = useRouter();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -42,7 +46,9 @@ export default function ChangePassword() {
       return;
     }
     
-    setUser(JSON.parse(userData));
+    const parsedUser = JSON.parse(userData);
+    console.log('Loaded user from localStorage:', parsedUser);
+    setUser(parsedUser);
 
     // Animate card entrance
     if (cardRef.current) {
@@ -67,6 +73,15 @@ export default function ChangePassword() {
     } else if (formData.newPassword === formData.currentPassword) {
       newErrors.newPassword = 'New password must be different from current password';
     }
+
+    // Enhanced password validation
+    const hasUpperCase = /[A-Z]/.test(formData.newPassword);
+    const hasLowerCase = /[a-z]/.test(formData.newPassword);
+    const hasNumber = /[0-9]/.test(formData.newPassword);
+    
+    if (formData.newPassword && (!hasUpperCase || !hasLowerCase || !hasNumber)) {
+      newErrors.newPassword = 'Password must contain uppercase, lowercase, and number';
+    }
     
     if (!formData.confirmPassword) {
       newErrors.confirmPassword = 'Please confirm your new password';
@@ -79,11 +94,31 @@ export default function ChangePassword() {
   };
 
   const handleSubmit = async () => {
+    console.log('Button clicked! Starting password change process...');
+    console.log('Form data:', formData);
+    console.log('User:', user);
+    
     if (!validateForm()) {
+      console.log('Form validation failed');
       // Shake animation for errors
       if (formRef.current) {
         gsap.to(formRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
       }
+      toast({
+        title: 'Validation Error',
+        description: 'Please fix the errors in the form',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (!user) {
+      console.log('No user found');
+      toast({
+        title: 'Error',
+        description: 'User not found. Please sign in again.',
+        variant: 'destructive',
+      });
       return;
     }
     
@@ -94,46 +129,96 @@ export default function ChangePassword() {
       gsap.to(cardRef.current, { scale: 1.02, duration: 0.5, yoyo: true, repeat: -1 });
     }
     
-    // Simulate API call
-    setTimeout(() => {
-      // Mock password verification
-      const mockCurrentPassword = user?.isAdmin ? 'admin123' : 'user123';
+    try {
+      console.log('Calling UserService to change password...');
       
-      if (formData.currentPassword !== mockCurrentPassword) {
-        setErrors({ currentPassword: 'Current password is incorrect' });
+      // Call the API to change password
+      const response = await UserService.changePassword({
+        currentPassword: formData.currentPassword,
+        newPassword: formData.newPassword,
+        confirmPassword: formData.confirmPassword,
+      });
+
+      console.log('Password change response:', response);
+
+      if (response.success) {
+        // Stop loading animation
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
+        
+        setIsSuccess(true);
+        setIsLoading(false);
+        
+        toast({
+          title: 'Success!',
+          description: response.message || 'Your password has been changed successfully',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+        
+        // Success animation
+        if (cardRef.current) {
+          gsap.to(cardRef.current, { 
+            scale: 1.1, 
+            rotation: 360, 
+            duration: 1,
+            ease: "back.out(1.7)",
+            onComplete: () => {
+              setTimeout(() => {
+                router.push('/profile');
+              }, 2000);
+            }
+          });
+        }
+      } else {
+        // Handle API errors
+        console.log('Password change failed:', response.error);
+        
+        // Stop loading animation
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
+        
+        // Set specific field errors
+        if (response.error?.includes('Current password')) {
+          setErrors({ currentPassword: response.error });
+        } else if (response.error?.includes('New password') || response.error?.includes('Password must')) {
+          setErrors({ newPassword: response.error });
+        }
+        
+        toast({
+          title: 'Password Change Failed',
+          description: response.error || 'Failed to change password',
+          variant: 'destructive',
+        });
         
         // Error shake animation
         if (cardRef.current) {
-          gsap.killTweensOf(cardRef.current);
-          gsap.set(cardRef.current, { scale: 1 });
           gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
         }
         
         setIsLoading(false);
-        return;
       }
+    } catch (error: any) {
+      console.error('Password change error:', error);
       
-      gsap.killTweensOf(cardRef.current);
-      gsap.set(cardRef.current, { scale: 1 });
-      
-      setIsSuccess(true);
-      setIsLoading(false);
-      
-      // Success animation
+      // Stop loading animation
       if (cardRef.current) {
-        gsap.to(cardRef.current, { 
-          scale: 1.1, 
-          rotation: 360, 
-          duration: 1,
-          ease: "back.out(1.7)",
-          onComplete: () => {
-            setTimeout(() => {
-              router.push('/profile');
-            }, 2000);
-          }
-        });
+        gsap.killTweensOf(cardRef.current);
+        gsap.set(cardRef.current, { scale: 1 });
       }
-    }, 1500);
+      
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to change password. Please try again.',
+        variant: 'destructive',
+      });
+      
+      // Error shake animation
+      if (formRef.current) {
+        gsap.to(formRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
+      }
+      
+      setIsLoading(false);
+    }
   };
 
   const handleInputChange = (field: string, value: string) => {
@@ -341,16 +426,28 @@ export default function ChangePassword() {
               </Button>
             </div>
             
-            {/* Security Notice */}
+            {/* Password Requirements */}
             <div className="bg-blue-500/10 p-6 rounded-lg border border-blue-500/30">
               <div className="flex items-start space-x-3">
                 <AlertCircle className="h-5 w-5 text-blue-400 mt-0.5" />
                 <div className="text-blue-300">
-                  <p className="font-medium mb-2">Security Tips:</p>
+                  <p className="font-medium mb-2">Password Requirements:</p>
                   <ul className="text-sm space-y-1">
-                    <li>• Use a strong password with at least 6 characters</li>
-                    <li>• Include a mix of letters, numbers, and symbols</li>
-                    <li>• Don't reuse passwords from other accounts</li>
+                    <li className={formData.newPassword.length >= 6 ? 'text-green-400' : ''}>
+                      • At least 6 characters
+                    </li>
+                    <li className={/[A-Z]/.test(formData.newPassword) ? 'text-green-400' : ''}>
+                      • One uppercase letter (A-Z)
+                    </li>
+                    <li className={/[a-z]/.test(formData.newPassword) ? 'text-green-400' : ''}>
+                      • One lowercase letter (a-z)
+                    </li>
+                    <li className={/[0-9]/.test(formData.newPassword) ? 'text-green-400' : ''}>
+                      • One number (0-9)
+                    </li>
+                    <li className={formData.newPassword && formData.newPassword !== formData.currentPassword ? 'text-green-400' : ''}>
+                      • Different from current password
+                    </li>
                   </ul>
                 </div>
               </div>

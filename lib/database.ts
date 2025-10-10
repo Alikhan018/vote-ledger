@@ -87,10 +87,20 @@ export class DatabaseService {
   // Election operations
   static async createElection(election: Omit<Election, 'id'>): Promise<string | null> {
     try {
-      const docRef = await addDoc(collection(db, COLLECTIONS.ELECTIONS), election);
+      // Convert Date objects to Timestamps for Firestore
+      const electionData = {
+        ...election,
+        startDate: election.startDate instanceof Date ? Timestamp.fromDate(election.startDate) : election.startDate,
+        endDate: election.endDate instanceof Date ? Timestamp.fromDate(election.endDate) : election.endDate,
+        createdAt: election.createdAt instanceof Date ? Timestamp.fromDate(election.createdAt) : serverTimestamp(),
+        updatedAt: election.updatedAt instanceof Date ? Timestamp.fromDate(election.updatedAt) : serverTimestamp(),
+      };
+      
+      const docRef = await addDoc(collection(db, COLLECTIONS.ELECTIONS), electionData);
       return docRef.id;
     } catch (error) {
       console.error('Create election error:', error);
+      console.error('Election data:', election);
       return null;
     }
   }

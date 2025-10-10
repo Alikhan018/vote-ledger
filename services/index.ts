@@ -23,14 +23,44 @@ export type {
 
 export { AdminService } from './admin-service';
 export type { 
-  UserProfile, 
+  UserProfile as AdminUserProfile, 
   CreateElectionRequest, 
   CreateCandidateRequest 
 } from './admin-service';
 
 export { ProfileService } from './profile-service';
 export type { 
-  UpdateProfileRequest, 
-  ChangePasswordRequest 
+  UpdateProfileRequest as ProfileUpdateRequest, 
+  ChangePasswordRequest as ProfileChangePasswordRequest 
 } from './profile-service';
+
+export { UserService } from './user-service';
+export type { 
+  UserProfile,
+  UpdateProfileRequest, 
+  ChangePasswordRequest,
+  GetProfileResponse,
+  UpdateProfileResponse,
+  ChangePasswordResponse
+} from './user-service';
+
+export { AdminCandidatesService } from './admin-candidates-service';
+export type { 
+  AdminCandidate,
+  AdminCreateCandidateRequest,
+  AdminUpdateCandidateRequest,
+  GetCandidatesResponse,
+  CandidateResponse
+} from './admin-candidates-service';
+
+export { AdminElectionsService } from './admin-elections-service';
+export type {
+  AdminElection,
+  CreateElectionRequest as AdminCreateElectionRequest,
+  UpdateElectionStatusRequest,
+  DeployResultsRequest,
+  GetElectionsResponse,
+  ElectionResponse,
+  ElectionStatsResponse
+} from './admin-elections-service';
 

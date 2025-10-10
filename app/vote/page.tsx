@@ -10,7 +10,7 @@ import { gsap } from 'gsap';
 import { Vote, Check, AlertCircle, Clock, CheckCircle, Zap, Sparkles, Eye } from 'lucide-react';
 
 interface Candidate {
-  id: string;
+  id?: string;
   name: string;
   party: string;
   symbol: string;
@@ -62,12 +62,12 @@ export default function CastVote() {
         // Get candidates for the active election
         const allCandidates = await DatabaseService.getCandidates();
         const electionCandidates = allCandidates.filter(candidate => 
-          activeElection.candidates.includes(candidate.id)
+          candidate.id && activeElection.candidates.includes(candidate.id)
         );
         setCandidates(electionCandidates);
         
         // Check if user has already voted
-        const userVote = await DatabaseService.getUserVote(JSON.parse(userData).uid, activeElection.id);
+        const userVote = await DatabaseService.getUserVote(JSON.parse(userData).uid, activeElection.id!);
         setHasVoted(!!userVote);
         
         // Store election info for voting
@@ -134,7 +134,7 @@ export default function CastVote() {
       const voteResult = await DatabaseService.castVote({
         voterId: user.uid,
         candidateId: selectedCandidate,
-        electionId: activeElection.id,
+        electionId: activeElection.id!,
       });
       
       if (voteResult.success) {
@@ -342,7 +342,7 @@ export default function CastVote() {
                     ? 'border-blockchain-primary bg-blockchain-primary/20 neon-glow scale-105' 
                     : `${getColorClasses(candidate.color)} hover:neon-glow`
                 }`}
-                onClick={() => setSelectedCandidate(candidate.id)}
+                onClick={() => setSelectedCandidate(candidate.id!)}
               >
                 <CardContent className="p-8">
                   <div className="flex items-center space-x-6">
