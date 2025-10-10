@@ -90,6 +90,7 @@ export default function AdminPanel() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [electionLoading, setElectionLoading] = useState(false);
+  const [refreshLoading, setRefreshLoading] = useState(false);
   const [newElection, setNewElection] = useState<AdminCreateElectionRequest>({
     title: '',
     description: '',
@@ -106,6 +107,80 @@ export default function AdminPanel() {
   const candidatesRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { toast } = useToast();
+
+  // Load candidates from API
+  const loadCandidates = async () => {
+    try {
+      setCandidateLoading(true);
+      const response = await AdminCandidatesService.getCandidates();
+      
+      if (response.success && response.candidates) {
+        setCandidates(response.candidates);
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to load candidates',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error loading candidates:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load candidates',
+        variant: 'destructive',
+      });
+    } finally {
+      setCandidateLoading(false);
+    }
+  };
+
+  // Load elections from API
+  const loadElections = async (showLoading = false) => {
+    try {
+      if (showLoading) setRefreshLoading(true);
+      
+      const response = await AdminElectionsService.getElections();
+      
+      if (response.success && response.elections) {
+        setElections(response.elections);
+        
+        // Find active election
+        const active = response.elections.find(e => e.status === 'active');
+        setActiveElection(active || null);
+        
+        // Update stats from active election or first election
+        const electionForStats = active || response.elections[0];
+        if (electionForStats) {
+          setElectionStats({
+            totalVoters: electionForStats.totalVoters || 0,
+            totalVotes: electionForStats.totalVotes || 0,
+            turnoutPercentage: electionForStats.turnoutPercentage || 0,
+            status: electionForStats.status,
+          });
+        }
+        
+        if (showLoading) {
+          toast({
+            title: 'Success',
+            description: 'Elections refreshed successfully',
+            className: 'bg-green-500/10 border-green-500/50',
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error loading elections:', error);
+      if (showLoading) {
+        toast({
+          title: 'Error',
+          description: 'Failed to refresh elections',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      if (showLoading) setRefreshLoading(false);
+    }
+  };
 
   useEffect(() => {
     const userData = localStorage.getItem('user');
@@ -127,6 +202,7 @@ export default function AdminPanel() {
     loadElections();
     
     setIsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   // Real-time updates for elections
@@ -139,6 +215,7 @@ export default function AdminPanel() {
     }, 10000);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   // GSAP animations
@@ -212,61 +289,6 @@ useEffect(() => {
     window.removeEventListener('scroll', handleScroll, true);
   };
 }, [showEmojiPicker]);
-
-  // Load candidates from API
-  const loadCandidates = async () => {
-    try {
-      setCandidateLoading(true);
-      const response = await AdminCandidatesService.getCandidates();
-      
-      if (response.success && response.candidates) {
-        setCandidates(response.candidates);
-      } else {
-        toast({
-          title: 'Error',
-          description: response.error || 'Failed to load candidates',
-          variant: 'destructive',
-        });
-      }
-    } catch (error: any) {
-      console.error('Error loading candidates:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load candidates',
-        variant: 'destructive',
-      });
-    } finally {
-      setCandidateLoading(false);
-    }
-  };
-
-  // Load elections from API
-  const loadElections = async () => {
-    try {
-      const response = await AdminElectionsService.getElections();
-      
-      if (response.success && response.elections) {
-        setElections(response.elections);
-        
-        // Find active election
-        const active = response.elections.find(e => e.status === 'active');
-        setActiveElection(active || null);
-        
-        // Update stats from active election or first election
-        const electionForStats = active || response.elections[0];
-        if (electionForStats) {
-          setElectionStats({
-            totalVoters: electionForStats.totalVoters || 0,
-            totalVotes: electionForStats.totalVotes || 0,
-            turnoutPercentage: electionForStats.turnoutPercentage || 0,
-            status: electionForStats.status,
-          });
-        }
-      }
-    } catch (error: any) {
-      console.error('Error loading elections:', error);
-    }
-  };
 
   // Create a new election
   const handleCreateElection = async () => {
@@ -831,13 +853,14 @@ useEffect(() => {
                       </Badge>
                     </CardTitle>
                     <Button
-                      onClick={loadElections}
+                      onClick={() => loadElections(true)}
                       variant="outline"
                       size="sm"
+                      disabled={refreshLoading}
                       className="flex items-center space-x-2"
                     >
-                      <RefreshCw className="h-4 w-4" />
-                      <span>Refresh</span>
+                      <RefreshCw className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
+                      <span>{refreshLoading ? 'Refreshing...' : 'Refresh'}</span>
                     </Button>
                   </div>
                 </CardHeader>
