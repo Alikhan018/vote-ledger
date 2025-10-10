@@ -31,10 +31,20 @@ import {
   Zap,
   TrendingUp,
   Activity,
-  Target
+  Target,
+  Calendar,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
-import { AdminCandidatesService, AdminCandidate, AdminCreateCandidateRequest } from '@/services';
+import { 
+  AdminCandidatesService, 
+  AdminCandidate, 
+  AdminCreateCandidateRequest,
+  AdminElectionsService,
+  AdminElection,
+  AdminCreateElectionRequest
+} from '@/services';
 import { useToast } from '@/hooks/use-toast';
 
 // Dynamic import for emoji picker to avoid SSR issues
@@ -54,17 +64,19 @@ interface ElectionStats {
   totalVoters: number;
   totalVotes: number;
   turnoutPercentage: number;
-  status: 'inactive' | 'active' | 'closed';
+  status: 'upcoming' | 'active' | 'ended';
 }
 
 export default function AdminPanel() {
   const [user, setUser] = useState<User | null>(null);
   const [candidates, setCandidates] = useState<AdminCandidate[]>([]);
+  const [elections, setElections] = useState<AdminElection[]>([]);
+  const [activeElection, setActiveElection] = useState<AdminElection | null>(null);
   const [electionStats, setElectionStats] = useState<ElectionStats>({
-    totalVoters: 12500,
-    totalVotes: 10000,
-    turnoutPercentage: 80.0,
-    status: 'closed'
+    totalVoters: 0,
+    totalVotes: 0,
+    turnoutPercentage: 0,
+    status: 'upcoming'
   });
   const [newCandidate, setNewCandidate] = useState<AdminCreateCandidateRequest>({
     name: '',
@@ -77,6 +89,14 @@ export default function AdminPanel() {
   const [activeTab, setActiveTab] = useState('overview');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [candidateLoading, setCandidateLoading] = useState(false);
+  const [electionLoading, setElectionLoading] = useState(false);
+  const [newElection, setNewElection] = useState<AdminCreateElectionRequest>({
+    title: '',
+    description: '',
+    startDate: '',
+    endDate: '',
+    candidates: []
+  });
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [emojiPickerPosition, setEmojiPickerPosition] = useState({ top: 0, left: 0 });
   const emojiPickerRef = useRef<HTMLDivElement>(null);
@@ -102,11 +122,24 @@ export default function AdminPanel() {
     
     setUser(parsedUser);
     
-    // Load candidates from API
+    // Load data from API
     loadCandidates();
+    loadElections();
     
     setIsLoading(false);
   }, [router]);
+
+  // Real-time updates for elections
+  useEffect(() => {
+    if (!user) return;
+
+    // Poll for election updates every 10 seconds
+    const interval = setInterval(() => {
+      loadElections();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [user]);
 
   // GSAP animations
   useEffect(() => {
@@ -207,24 +240,144 @@ useEffect(() => {
     }
   };
 
-  const handleElectionAction = async (action: string) => {
+  // Load elections from API
+  const loadElections = async () => {
+    try {
+      const response = await AdminElectionsService.getElections();
+      
+      if (response.success && response.elections) {
+        setElections(response.elections);
+        
+        // Find active election
+        const active = response.elections.find(e => e.status === 'active');
+        setActiveElection(active || null);
+        
+        // Update stats from active election or first election
+        const electionForStats = active || response.elections[0];
+        if (electionForStats) {
+          setElectionStats({
+            totalVoters: electionForStats.totalVoters || 0,
+            totalVotes: electionForStats.totalVotes || 0,
+            turnoutPercentage: electionForStats.turnoutPercentage || 0,
+            status: electionForStats.status,
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error loading elections:', error);
+    }
+  };
+
+  // Create a new election
+  const handleCreateElection = async () => {
+    if (!newElection.title || !newElection.description || !newElection.startDate || !newElection.endDate) {
+      toast({
+        title: 'Validation Error',
+        description: 'All fields are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setElectionLoading(true);
+    
+    try {
+      const response = await AdminElectionsService.createElection({
+        ...newElection,
+        candidates: candidates.map(c => c.id),
+      });
+
+      if (response.success && response.election) {
+        setElections(prev => [response.election!, ...prev]);
+        setNewElection({ title: '', description: '', startDate: '', endDate: '', candidates: [] });
+        toast({
+          title: 'Success!',
+          description: 'Election created successfully',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+      } else {
+        toast({
+          title: 'Error',
+          description: response.error || 'Failed to create election',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      console.error('Error creating election:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create election',
+        variant: 'destructive',
+      });
+    } finally {
+      setElectionLoading(false);
+    }
+  };
+
+  // Handle election status updates (activate, close)
+  const handleElectionAction = async (electionId: string, action: 'activate' | 'close' | 'deploy') => {
     setActionLoading(action);
     
-    // Simulate API call
-    setTimeout(() => {
-      switch (action) {
-        case 'activate':
-          setElectionStats(prev => ({ ...prev, status: 'active' }));
-          break;
-        case 'close':
-          setElectionStats(prev => ({ ...prev, status: 'closed' }));
-          break;
-        case 'deploy':
-          // Results deployment logic
-          break;
+    try {
+      if (action === 'activate') {
+        const response = await AdminElectionsService.updateElectionStatus(electionId, 'active');
+        if (response.success) {
+          await loadElections();
+          toast({
+            title: 'Success!',
+            description: 'Election activated successfully',
+            className: 'bg-green-500/10 border-green-500/50',
+          });
+        } else {
+          toast({
+            title: 'Error',
+            description: response.error || 'Failed to activate election',
+            variant: 'destructive',
+          });
+        }
+      } else if (action === 'close') {
+        const response = await AdminElectionsService.updateElectionStatus(electionId, 'ended');
+        if (response.success) {
+          await loadElections();
+          toast({
+            title: 'Success!',
+            description: 'Election closed successfully',
+            className: 'bg-green-500/10 border-green-500/50',
+          });
+        } else {
+          toast({
+            title: 'Error',
+            description: response.error || 'Failed to close election',
+            variant: 'destructive',
+          });
+        }
+      } else if (action === 'deploy') {
+        const response = await AdminElectionsService.deployResults(electionId);
+        if (response.success) {
+          await loadElections();
+          toast({
+            title: 'Success!',
+            description: 'Results deployed successfully',
+            className: 'bg-green-500/10 border-green-500/50',
+          });
+        } else {
+          toast({
+            title: 'Error',
+            description: response.error || 'Failed to deploy results',
+            variant: 'destructive',
+          });
+        }
       }
+    } catch (error: any) {
+      console.error('Error performing election action:', error);
+      toast({
+        title: 'Error',
+        description: 'Operation failed',
+        variant: 'destructive',
+      });
+    } finally {
       setActionLoading(null);
-    }, 2000);
+    }
   };
 
   const handleAddCandidate = async () => {
@@ -523,21 +676,26 @@ useEffect(() => {
                         <div className="flex items-center space-x-2">
                           <Badge className={`${
                             electionStats.status === 'active' ? 'bg-green-100 text-green-800 border-green-200' :
-                            electionStats.status === 'closed' ? 'bg-blue-100 text-blue-800 border-blue-200' : 
+                            electionStats.status === 'ended' ? 'bg-blue-100 text-blue-800 border-blue-200' : 
                             'bg-gray-100 text-gray-800 border-gray-200'
                           }`}>
                             {electionStats.status === 'active' ? 'Active' :
-                             electionStats.status === 'closed' ? 'Closed' : 'Inactive'}
+                             electionStats.status === 'ended' ? 'Ended' : 'Upcoming'}
                           </Badge>
                         </div>
                         <p className="text-xs text-gray-500 mt-2">
                           {electionStats.status === 'active' ? 'Voting in progress' :
-                           electionStats.status === 'closed' ? 'Results available' : 'Not started'}
+                           electionStats.status === 'ended' ? 'Results available' : 'Not started'}
                         </p>
+                        {activeElection && (
+                          <p className="text-xs font-semibold text-gray-700 mt-1">
+                            {activeElection.title}
+                          </p>
+                        )}
                       </div>
                       <div className={`p-3 rounded-xl ${
                         electionStats.status === 'active' ? 'bg-gradient-to-r from-green-500 to-green-600' :
-                        electionStats.status === 'closed' ? 'bg-gradient-to-r from-blue-500 to-blue-600' : 
+                        electionStats.status === 'ended' ? 'bg-gradient-to-r from-blue-500 to-blue-600' : 
                         'bg-gradient-to-r from-gray-500 to-gray-600'
                       }`}>
                         {electionStats.status === 'active' ? 
@@ -580,66 +738,223 @@ useEffect(() => {
           {/* Election Management Tab */}
           {activeTab === 'election' && (
             <div className="space-y-6">
-              <Card className="shadow-lg border-0">
+              {/* Create New Election */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
                 <CardHeader>
-                  <CardTitle>Election Control</CardTitle>
+                  <CardTitle className="flex items-center space-x-3">
+                    <div className="p-2 bg-gradient-to-r from-green-500 to-green-600 rounded-lg">
+                      <Calendar className="h-5 w-5 text-white" />
+                    </div>
+                    <span>Create New Election</span>
+                  </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Button
-                      onClick={() => handleElectionAction('activate')}
-                      disabled={electionStats.status === 'active' || actionLoading === 'activate'}
-                      variant="gradient"
-                      className="flex items-center space-x-2 h-12"
-                    >
-                      {actionLoading === 'activate' ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      ) : (
-                        <Play className="h-4 w-4" />
-                      )}
-                      <span>Activate Election</span>
-                    </Button>
-                    
-                    <Button
-                      onClick={() => handleElectionAction('close')}
-                      disabled={electionStats.status !== 'active' || actionLoading === 'close'}
-                      variant="secondary"
-                      className="flex items-center space-x-2 h-12"
-                    >
-                      {actionLoading === 'close' ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                      ) : (
-                        <Square className="h-4 w-4" />
-                      )}
-                      <span>Close Election</span>
-                    </Button>
-                    
-                    <Button
-                      onClick={() => handleElectionAction('deploy')}
-                      disabled={electionStats.status !== 'closed' || actionLoading === 'deploy'}
-                      variant="outline"
-                      className="flex items-center space-x-2 h-12"
-                    >
-                      {actionLoading === 'deploy' ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blockchain-primary"></div>
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      <span>Deploy Results</span>
-                    </Button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Election Title</label>
+                      <Input
+                        placeholder="e.g., National Elections 2025"
+                        value={newElection.title}
+                        onChange={(e) => setNewElection(prev => ({ ...prev, title: e.target.value }))}
+                        disabled={electionLoading}
+                        className="h-12"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Description</label>
+                      <Input
+                        placeholder="Brief description"
+                        value={newElection.description}
+                        onChange={(e) => setNewElection(prev => ({ ...prev, description: e.target.value }))}
+                        disabled={electionLoading}
+                        className="h-12"
+                      />
+                    </div>
                   </div>
                   
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-2">Current Election Status</h4>
-                    <div className="flex items-center space-x-2">
-                      <div className={`w-3 h-3 rounded-full ${
-                        electionStats.status === 'active' ? 'bg-green-500 animate-pulse' :
-                        electionStats.status === 'closed' ? 'bg-blue-500' : 'bg-gray-400'
-                      }`}></div>
-                      <span className="text-sm text-gray-600">
-                        Election is currently <strong>{electionStats.status}</strong>
-                      </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Start Date & Time</label>
+                      <Input
+                        type="datetime-local"
+                        value={newElection.startDate as string}
+                        onChange={(e) => setNewElection(prev => ({ ...prev, startDate: e.target.value }))}
+                        disabled={electionLoading}
+                        className="h-12"
+                      />
                     </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">End Date & Time</label>
+                      <Input
+                        type="datetime-local"
+                        value={newElection.endDate as string}
+                        onChange={(e) => setNewElection(prev => ({ ...prev, endDate: e.target.value }))}
+                        disabled={electionLoading}
+                        className="h-12"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <AlertCircle className="h-5 w-5 text-blue-600" />
+                    <span className="text-sm text-blue-800">
+                      All existing candidates will be included in this election
+                    </span>
+                  </div>
+                  
+                  <Button
+                    onClick={handleCreateElection}
+                    disabled={electionLoading}
+                    className="h-12 px-6 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+                  >
+                    {electionLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                    ) : (
+                      <Plus className="h-5 w-5 mr-2" />
+                    )}
+                    Create Election
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Elections List */}
+              <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center space-x-3">
+                      <div className="p-2 bg-gradient-to-r from-blue-500 to-blue-600 rounded-lg">
+                        <BarChart3 className="h-5 w-5 text-white" />
+                      </div>
+                      <span>All Elections</span>
+                      <Badge variant="secondary" className="ml-3 bg-blue-100 text-blue-800">
+                        {elections.length}
+                      </Badge>
+                    </CardTitle>
+                    <Button
+                      onClick={loadElections}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center space-x-2"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                      <span>Refresh</span>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {elections.length === 0 ? (
+                      <div className="text-center py-16">
+                        <div className="w-24 h-24 mx-auto mb-4 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center">
+                          <Calendar className="h-12 w-12 text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Elections Yet</h3>
+                        <p className="text-gray-500 mb-4">Create your first election to get started.</p>
+                      </div>
+                    ) : (
+                      elections.map((election) => (
+                        <div key={election.id} className="p-6 bg-gradient-to-r from-white to-gray-50/50 rounded-xl border border-gray-200/50 hover:shadow-lg transition-shadow duration-300">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-3 mb-2">
+                                <h3 className="text-xl font-bold text-gray-900">{election.title}</h3>
+                                <Badge className={`${
+                                  election.status === 'active' ? 'bg-green-100 text-green-800 border-green-200' :
+                                  election.status === 'ended' ? 'bg-blue-100 text-blue-800 border-blue-200' : 
+                                  'bg-gray-100 text-gray-800 border-gray-200'
+                                }`}>
+                                  {election.status.charAt(0).toUpperCase() + election.status.slice(1)}
+                                </Badge>
+                              </div>
+                              <p className="text-gray-600 mb-3">{election.description}</p>
+                              
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+                                <div className="flex items-center space-x-2">
+                                  <Calendar className="h-4 w-4 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Start Date</p>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {new Date(election.startDate).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Clock className="h-4 w-4 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">End Date</p>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {new Date(election.endDate).toLocaleDateString()}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Eye className="h-4 w-4 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Total Votes</p>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {election.totalVotes || 0}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Activity className="h-4 w-4 text-gray-500" />
+                                  <div>
+                                    <p className="text-xs text-gray-500">Turnout</p>
+                                    <p className="text-sm font-medium text-gray-900">
+                                      {election.turnoutPercentage || 0}%
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex space-x-2 pt-4 border-t border-gray-200">
+                            <Button
+                              onClick={() => handleElectionAction(election.id!, 'activate')}
+                              disabled={election.status === 'active' || actionLoading === 'activate'}
+                              size="sm"
+                              className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+                            >
+                              {actionLoading === 'activate' ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                              ) : (
+                                <Play className="h-4 w-4 mr-1" />
+                              )}
+                              Start
+                            </Button>
+                            
+                            <Button
+                              onClick={() => handleElectionAction(election.id!, 'close')}
+                              disabled={election.status !== 'active' || actionLoading === 'close'}
+                              size="sm"
+                              variant="secondary"
+                            >
+                              {actionLoading === 'close' ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                              ) : (
+                                <Square className="h-4 w-4 mr-1" />
+                              )}
+                              Close
+                            </Button>
+                            
+                            <Button
+                              onClick={() => handleElectionAction(election.id!, 'deploy')}
+                              disabled={election.status !== 'ended' || actionLoading === 'deploy'}
+                              size="sm"
+                              variant="outline"
+                            >
+                              {actionLoading === 'deploy' ? (
+                                <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                              ) : (
+                                <Upload className="h-4 w-4 mr-1" />
+                              )}
+                              Deploy Results
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </CardContent>
               </Card>

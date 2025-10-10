@@ -53,3 +53,14 @@ export type {
   CandidateResponse
 } from './admin-candidates-service';
 
+export { AdminElectionsService } from './admin-elections-service';
+export type {
+  AdminElection,
+  CreateElectionRequest as AdminCreateElectionRequest,
+  UpdateElectionStatusRequest,
+  DeployResultsRequest,
+  GetElectionsResponse,
+  ElectionResponse,
+  ElectionStatsResponse
+} from './admin-elections-service';
+

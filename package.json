@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:firebase": "node ./scripts/test-firebase-connection.js",
-    "setup-admin": "node ./scripts/setup-admin.js"
+    "test:firebase": "node ./scripts/test-firebase-connection.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -52,7 +51,6 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
-    "emoji-picker-react": "^4.14.0",
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
     "firebase": "^12.3.0",
@@ -80,7 +78,6 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/three": "^0.158.0",
-    "dotenv": "^17.2.3"
+    "@types/three": "^0.158.0"
   }
 }
