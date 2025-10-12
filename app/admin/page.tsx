@@ -43,7 +43,8 @@ import {
   AdminCreateCandidateRequest,
   AdminElectionsService,
   AdminElection,
-  AdminCreateElectionRequest
+  AdminCreateElectionRequest,
+  AdminStatsResponse
 } from '@/services';
 import { useToast } from '@/hooks/use-toast';
 
@@ -67,6 +68,30 @@ interface ElectionStats {
   status: 'upcoming' | 'active' | 'ended';
 }
 
+interface AdminStats {
+  overview: {
+    totalUsers: number;
+    totalElections: number;
+    totalVotesAllTime: number;
+    totalCandidates: number;
+    userGrowthPercentage: number;
+    newUsersThisMonth: number;
+  };
+  activeElection: {
+    totalVotes: number;
+    totalVoters: number;
+    turnoutPercentage: number;
+    status: 'upcoming' | 'active' | 'ended';
+    electionTitle: string;
+    electionId: string | null;
+  };
+  system: {
+    uptimePercentage: number;
+    databaseStatus: string;
+    blockchainStatus: string;
+  };
+}
+
 export default function AdminPanel() {
   const [user, setUser] = useState<User | null>(null);
   const [candidates, setCandidates] = useState<AdminCandidate[]>([]);
@@ -78,6 +103,8 @@ export default function AdminPanel() {
     turnoutPercentage: 0,
     status: 'upcoming'
   });
+  const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
   const [newCandidate, setNewCandidate] = useState<AdminCreateCandidateRequest>({
     name: '',
     party: '',
@@ -87,7 +114,7 @@ export default function AdminPanel() {
   const [editingCandidate, setEditingCandidate] = useState<AdminCandidate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
-  const [actionLoading, setActionLoading] = useState<{[electionId: string]: string}>({});
+  const [actionLoading, setActionLoading] = useState<{[electionId: string]: string | null}>({});
   const [candidateLoading, setCandidateLoading] = useState(false);
   const [electionLoading, setElectionLoading] = useState(false);
   const [refreshLoading, setRefreshLoading] = useState(false);
@@ -135,6 +162,55 @@ export default function AdminPanel() {
       });
     } finally {
       setCandidateLoading(false);
+    }
+  };
+
+  // Load admin stats from API
+  const loadAdminStats = async (showLoading = false) => {
+    try {
+      if (showLoading) setStatsLoading(true);
+      
+      const response = await AdminElectionsService.getAdminStats();
+      
+      if (response.success && response.stats) {
+        setAdminStats(response.stats);
+        
+        // Update election stats with active election data
+        setElectionStats({
+          totalVoters: response.stats.activeElection.totalVoters,
+          totalVotes: response.stats.activeElection.totalVotes,
+          turnoutPercentage: response.stats.activeElection.turnoutPercentage,
+          status: response.stats.activeElection.status,
+        });
+        
+        if (showLoading) {
+          toast({
+            title: 'Success',
+            description: 'Stats refreshed successfully',
+            className: 'bg-green-500/10 border-green-500/50',
+          });
+        }
+      } else {
+        console.error('Failed to load admin stats:', response.error);
+        if (showLoading) {
+          toast({
+            title: 'Error',
+            description: response.error || 'Failed to load statistics',
+            variant: 'destructive',
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error loading admin stats:', error);
+      if (showLoading) {
+        toast({
+          title: 'Error',
+          description: 'Failed to load statistics',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      if (showLoading) setStatsLoading(false);
     }
   };
 
@@ -214,6 +290,7 @@ export default function AdminPanel() {
     // Load data from API
     loadCandidates();
     loadElections();
+    loadAdminStats();
     
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -231,8 +308,9 @@ export default function AdminPanel() {
     // Check election timing every 30 seconds
     const electionInterval = setInterval(async () => {
       // Only refresh if not currently loading
-      if (!refreshLoading && !electionLoading) {
+      if (!refreshLoading && !electionLoading && !statsLoading) {
         await loadElections();
+        await loadAdminStats();
         await checkElectionTiming();
       }
     }, 30000);
@@ -920,6 +998,21 @@ useEffect(() => {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <div className="space-y-8">
+              {/* Stats Header with Refresh */}
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">Overview Statistics</h2>
+                <Button
+                  onClick={() => loadAdminStats(true)}
+                  variant="outline"
+                  size="sm"
+                  disabled={statsLoading}
+                  className="flex items-center space-x-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${statsLoading ? 'animate-spin' : ''}`} />
+                  <span>{statsLoading ? 'Refreshing...' : 'Refresh Stats'}</span>
+                </Button>
+              </div>
+
               {/* Stats Cards */}
               <div ref={statsRef} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl hover:shadow-2xl transition-shadow duration-300">
@@ -928,11 +1021,15 @@ useEffect(() => {
                       <div>
                         <p className="text-sm font-medium text-gray-600 mb-1">Registered Voters</p>
                         <p className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
-                          {electionStats.totalVoters.toLocaleString()}
+                          {adminStats?.overview.totalUsers.toLocaleString() || electionStats.totalVoters.toLocaleString()}
                         </p>
                         <div className="flex items-center mt-2">
                           <TrendingUp className="h-4 w-4 text-green-500 mr-1" />
-                          <span className="text-xs text-green-600">+12% this month</span>
+                          <span className="text-xs text-green-600">
+                            {adminStats?.overview.userGrowthPercentage 
+                              ? `+${adminStats.overview.userGrowthPercentage}% this month` 
+                              : 'Loading...'}
+                          </span>
                         </div>
                       </div>
                       <div className="p-3 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl">
@@ -948,11 +1045,13 @@ useEffect(() => {
                       <div>
                         <p className="text-sm font-medium text-gray-600 mb-1">Total Votes Cast</p>
                         <p className="text-3xl font-bold bg-gradient-to-r from-green-600 to-green-800 bg-clip-text text-transparent">
-                          {electionStats.totalVotes.toLocaleString()}
+                          {adminStats?.activeElection.totalVotes.toLocaleString() || electionStats.totalVotes.toLocaleString()}
                         </p>
                         <div className="flex items-center mt-2">
                           <Activity className="h-4 w-4 text-blue-500 mr-1" />
-                          <span className="text-xs text-blue-600">Live tracking</span>
+                          <span className="text-xs text-blue-600">
+                            {adminStats?.activeElection.status === 'active' ? 'Live tracking' : 'Election ended'}
+                          </span>
                         </div>
                       </div>
                       <div className="p-3 bg-gradient-to-r from-green-500 to-green-600 rounded-xl">
@@ -968,11 +1067,17 @@ useEffect(() => {
                       <div>
                         <p className="text-sm font-medium text-gray-600 mb-1">Turnout Rate</p>
                         <p className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-purple-800 bg-clip-text text-transparent">
-                          {electionStats.turnoutPercentage}%
+                          {adminStats?.activeElection.turnoutPercentage || electionStats.turnoutPercentage}%
                         </p>
                         <div className="flex items-center mt-2">
                           <Target className="h-4 w-4 text-orange-500 mr-1" />
-                          <span className="text-xs text-orange-600">Above average</span>
+                          <span className="text-xs text-orange-600">
+                            {adminStats?.activeElection.turnoutPercentage && adminStats.activeElection.turnoutPercentage > 50 
+                              ? 'Above average' 
+                              : adminStats?.activeElection.turnoutPercentage
+                              ? 'Below average'
+                              : 'Loading...'}
+                          </span>
                         </div>
                       </div>
                       <div className="p-3 bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl">
@@ -1001,9 +1106,9 @@ useEffect(() => {
                           {electionStats.status === 'active' ? 'Voting in progress' :
                            electionStats.status === 'ended' ? 'Results available' : 'Not started'}
                         </p>
-                        {activeElection && (
+                        {adminStats?.activeElection.electionTitle && (
                           <p className="text-xs font-semibold text-gray-700 mt-1">
-                            {activeElection.title}
+                            {adminStats.activeElection.electionTitle}
                           </p>
                         )}
                       </div>
@@ -1022,25 +1127,92 @@ useEffect(() => {
                 </Card>
               </div>
 
+              {/* Additional Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-1">Total Elections</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {adminStats?.overview.totalElections || 0}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">All time</p>
+                      </div>
+                      <div className="p-3 bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-xl">
+                        <Calendar className="h-6 w-6 text-white" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-1">Total Candidates</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {adminStats?.overview.totalCandidates || candidates.length}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">Registered</p>
+                      </div>
+                      <div className="p-3 bg-gradient-to-r from-pink-500 to-pink-600 rounded-xl">
+                        <UserPlus className="h-6 w-6 text-white" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-white/80 backdrop-blur-sm border-0 shadow-xl">
+                  <CardContent className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-1">New Users</p>
+                        <p className="text-2xl font-bold text-gray-900">
+                          {adminStats?.overview.newUsersThisMonth || 0}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">This month</p>
+                      </div>
+                      <div className="p-3 bg-gradient-to-r from-teal-500 to-teal-600 rounded-xl">
+                        <Sparkles className="h-6 w-6 text-white" />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
               {/* System Status */}
               <Card className="shadow-lg border-0">
                 <CardHeader>
                   <CardTitle>System Status</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
                       <span className="text-sm font-medium text-green-800">Blockchain Network</span>
                       <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="text-sm text-green-600">Online</span>
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm text-green-600">
+                          {adminStats?.system.blockchainStatus || 'Online'}
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
                       <span className="text-sm font-medium text-green-800">Database</span>
                       <div className="flex items-center space-x-2">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <span className="text-sm text-green-600">Connected</span>
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm text-green-600">
+                          {adminStats?.system.databaseStatus || 'Connected'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
+                      <span className="text-sm font-medium text-green-800">System Uptime</span>
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm text-green-600">
+                          {adminStats?.system.uptimePercentage || 99.9}%
+                        </span>
                       </div>
                     </div>
                   </div>
