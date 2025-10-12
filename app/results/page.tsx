@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Navigation from '@/components/Navigation';
 import ThreeBackground from '@/components/ThreeBackground';
 import { gsap } from 'gsap';
-import { Eye, BarChart3, Users, Clock, CheckCircle, AlertCircle, Trophy, Zap } from 'lucide-react';
+import { Eye, BarChart3, Users, Clock, CheckCircle, AlertCircle, Trophy, Zap, Shield, Link2 } from 'lucide-react';
 
 interface ElectionResult {
   candidateId: string;
@@ -20,104 +20,148 @@ interface ElectionResult {
 }
 
 interface User {
+  uid: string;
   name: string;
   cnic: string;
   isAdmin: boolean;
+}
+
+interface BlockchainStats {
+  isIntegritySafe: boolean;
+  matchPercentage: number;
+  totalBlocks: number;
+  totalVotes: number;
 }
 
 export default function Results() {
   const [user, setUser] = useState<User | null>(null);
   const [results, setResults] = useState<ElectionResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [electionClosed, setElectionClosed] = useState(true);
+  const [electionClosed, setElectionClosed] = useState(false);
   const [totalVotes, setTotalVotes] = useState(0);
   const [winner, setWinner] = useState<ElectionResult | null>(null);
+  const [blockchainStats, setBlockchainStats] = useState<BlockchainStats | null>(null);
+  const [electionTitle, setElectionTitle] = useState('General Election 2024');
   const router = useRouter();
   const headerRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const winnerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    if (!userData) {
-      router.push('/signin');
-      return;
-    }
-    
-    setUser(JSON.parse(userData));
-    
-    // Simulate loading results
-    setTimeout(() => {
-      const mockResults: ElectionResult[] = [
-        {
-          candidateId: '1',
-          name: 'Dr. Sarah Ahmed',
-          party: 'Progressive Party',
-          symbol: '🌟',
-          votes: 4250,
-          percentage: 42.5,
-          color: 'blue'
-        },
-        {
-          candidateId: '2',
-          name: 'Muhammad Ali Khan',
-          party: 'Unity Alliance',
-          symbol: '🏛️',
-          votes: 3100,
-          percentage: 31.0,
-          color: 'green'
-        },
-        {
-          candidateId: '3',
-          name: 'Fatima Hassan',
-          party: 'Democratic Front',
-          symbol: '🕊️',
-          votes: 1875,
-          percentage: 18.75,
-          color: 'purple'
-        },
-        {
-          candidateId: '4',
-          name: 'Ahmed Raza',
-          party: 'National Movement',
-          symbol: '⚡',
-          votes: 775,
-          percentage: 7.75,
-          color: 'orange'
+    const loadResults = async () => {
+      try {
+        const userData = localStorage.getItem('user');
+        if (!userData) {
+          router.push('/signin');
+          return;
         }
-      ];
-      
-      setResults(mockResults);
-      setTotalVotes(10000);
-      setWinner(mockResults[0]);
-      setIsLoading(false);
+        
+        const userParsed = JSON.parse(userData);
+        setUser(userParsed);
 
-      // Animate elements
-      const tl = gsap.timeline();
-      
-      if (headerRef.current) {
-        tl.fromTo(headerRef.current,
-          { y: -50, opacity: 0 },
-          { y: 0, opacity: 1, duration: 1, ease: "power2.out" }
-        );
-      }
+        // Import services
+        const { DatabaseService } = await import('@/lib/database');
+        const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
+        
+        // Get all elections to find the most recent one
+        const elections = await DatabaseService.getElections();
+        
+        if (elections.length === 0) {
+          setIsLoading(false);
+          return;
+        }
 
-      if (winnerRef.current) {
-        tl.fromTo(winnerRef.current,
-          { scale: 0, rotation: -180 },
-          { scale: 1, rotation: 0, duration: 1.2, ease: "back.out(1.7)" },
-          "-=0.5"
-        );
-      }
+        // Get the most recent election (active or ended)
+        const recentElection = elections.sort((a, b) => 
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )[0];
 
-      if (resultsRef.current) {
-        tl.fromTo(resultsRef.current.children,
-          { x: -100, opacity: 0 },
-          { x: 0, opacity: 1, duration: 0.8, stagger: 0.2, ease: "power2.out" },
-          "-=0.8"
-        );
+        setElectionTitle(recentElection.title);
+        setElectionClosed(recentElection.status === 'ended');
+
+        if (recentElection.status !== 'ended') {
+          setIsLoading(false);
+          return;
+        }
+
+        // Get candidates
+        const allCandidates = await DatabaseService.getCandidates();
+        
+        // Get vote counts
+        const voteCounts = await DatabaseService.getVoteCounts(recentElection.id!);
+        
+        // Calculate total votes
+        const total = voteCounts.reduce((sum, vc) => sum + vc.count, 0);
+        setTotalVotes(total);
+
+        // Build results
+        const electionResults: ElectionResult[] = voteCounts.map(vc => {
+          const candidate = allCandidates.find(c => c.id === vc.candidateId);
+          const percentage = total > 0 ? (vc.count / total) * 100 : 0;
+          
+          return {
+            candidateId: vc.candidateId,
+            name: candidate?.name || 'Unknown',
+            party: candidate?.party || 'Unknown',
+            symbol: candidate?.symbol || '❓',
+            votes: vc.count,
+            percentage: Math.round(percentage * 100) / 100,
+            color: candidate?.color || 'gray',
+          };
+        }).sort((a, b) => b.votes - a.votes);
+
+        setResults(electionResults);
+        
+        if (electionResults.length > 0) {
+          setWinner(electionResults[0]);
+        }
+
+        // Verify blockchain integrity
+        const blockchainIntegrity = await BlockchainDatabaseService.verifyBlockchainIntegrity();
+        
+        setBlockchainStats({
+          isIntegritySafe: blockchainIntegrity.isIntegritySafe,
+          matchPercentage: blockchainIntegrity.matchPercentage,
+          totalBlocks: blockchainIntegrity.consensusChain.length,
+          totalVotes: blockchainIntegrity.consensusChain.length - 1, // Exclude genesis
+        });
+
+        setIsLoading(false);
+
+        // Animate elements after data loads
+        setTimeout(() => {
+          const tl = gsap.timeline();
+          
+          if (headerRef.current) {
+            tl.fromTo(headerRef.current,
+              { y: -50, opacity: 0 },
+              { y: 0, opacity: 1, duration: 1, ease: "power2.out" }
+            );
+          }
+
+          if (winnerRef.current) {
+            tl.fromTo(winnerRef.current,
+              { scale: 0, rotation: -180 },
+              { scale: 1, rotation: 0, duration: 1.2, ease: "back.out(1.7)" },
+              "-=0.5"
+            );
+          }
+
+          if (resultsRef.current && resultsRef.current.children.length > 0) {
+            tl.fromTo(resultsRef.current.children,
+              { x: -100, opacity: 0 },
+              { x: 0, opacity: 1, duration: 0.8, stagger: 0.2, ease: "power2.out" },
+              "-=0.8"
+            );
+          }
+        }, 100);
+      } catch (error) {
+        console.error('Error loading results:', error);
+        setIsLoading(false);
       }
-    }, 1000);
+    };
+
+    loadResults();
   }, [router]);
 
   const getColorClasses = (color: string) => {
@@ -203,7 +247,7 @@ export default function Results() {
               <BarChart3 className="h-10 w-10 text-white" />
             </div>
             <h1 className="text-4xl font-bold gradient-text neon-text mb-4">Election Results</h1>
-            <p className="text-gray-400 text-lg">General Election 2024 - Final Results</p>
+            <p className="text-gray-400 text-lg">{electionTitle} - Final Results</p>
           </div>
 
           {/* Election Summary */}
@@ -219,10 +263,10 @@ export default function Results() {
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center mb-3">
-                    <Eye className="h-6 w-6 text-green-400 mr-3" />
-                    <span className="text-lg font-medium text-gray-400">Voter Turnout</span>
+                    <Shield className="h-6 w-6 text-green-400 mr-3" />
+                    <span className="text-lg font-medium text-gray-400">Blockchain Blocks</span>
                   </div>
-                  <p className="text-3xl font-bold text-green-400">78.5%</p>
+                  <p className="text-3xl font-bold text-green-400">{blockchainStats?.totalBlocks || 0}</p>
                 </div>
                 <div className="text-center">
                   <div className="flex items-center justify-center mb-3">
@@ -299,18 +343,66 @@ export default function Results() {
           </Card>
 
           {/* Blockchain Verification */}
-          <Card className="bg-blockchain-primary/10 border border-blockchain-primary/30 cyber-border">
+          <Card className={`${
+            blockchainStats?.isIntegritySafe 
+              ? 'bg-green-500/10 border border-green-500/30' 
+              : 'bg-yellow-500/10 border border-yellow-500/30'
+          } cyber-border`}>
             <CardContent className="p-8">
               <div className="flex items-start space-x-4">
-                <CheckCircle className="h-8 w-8 text-blockchain-primary mt-1 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold text-blockchain-accent mb-3 text-xl">Blockchain Verified</h3>
-                  <p className="text-gray-300 mb-4 text-lg">
-                    These results have been verified and recorded on the blockchain, ensuring complete transparency and immutability.
+                {blockchainStats?.isIntegritySafe ? (
+                  <CheckCircle className="h-8 w-8 text-green-400 mt-1 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="h-8 w-8 text-yellow-400 mt-1 flex-shrink-0" />
+                )}
+                <div className="flex-1">
+                  <h3 className={`font-semibold mb-3 text-xl ${
+                    blockchainStats?.isIntegritySafe ? 'text-green-400' : 'text-yellow-400'
+                  }`}>
+                    <Shield className="inline h-6 w-6 mr-2" />
+                    Blockchain Integrity Verification
+                  </h3>
+                  <p className="text-gray-300 mb-6 text-lg">
+                    {blockchainStats?.isIntegritySafe
+                      ? 'All vote blocks are verified and synchronized across all users. The blockchain integrity is intact.'
+                      : 'Blockchain verification detected some discrepancies. System administrators have been notified.'}
                   </p>
-                  <div className="bg-dark-secondary/50 p-4 rounded-lg border border-blockchain-primary/20">
-                    <p className="text-sm text-blockchain-accent font-mono">
-                      Block Hash: 0x{Math.random().toString(16).substr(2, 64)}
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="bg-dark-secondary/50 p-4 rounded-lg border border-blockchain-primary/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-400">Integrity Status</span>
+                        <CheckCircle className={`h-5 w-5 ${
+                          blockchainStats?.isIntegritySafe ? 'text-green-400' : 'text-yellow-400'
+                        }`} />
+                      </div>
+                      <p className="text-2xl font-bold text-white">
+                        {blockchainStats?.matchPercentage?.toFixed(1) || 0}%
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Chain synchronization across users</p>
+                    </div>
+                    
+                    <div className="bg-dark-secondary/50 p-4 rounded-lg border border-blockchain-primary/20">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm text-gray-400">Total Blocks</span>
+                        <Link2 className="h-5 w-5 text-blockchain-primary" />
+                      </div>
+                      <p className="text-2xl font-bold text-white">
+                        {blockchainStats?.totalBlocks || 0}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Including genesis block</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-dark-secondary/70 p-5 rounded-lg border border-blockchain-primary/30">
+                    <h4 className="text-sm font-medium text-gray-400 mb-3 flex items-center">
+                      <Shield className="h-4 w-4 mr-2" />
+                      Distributed Ledger Technology
+                    </h4>
+                    <p className="text-sm text-gray-300 leading-relaxed">
+                      Every vote is stored as a block with a unique hash. Each user maintains a complete copy of the 
+                      blockchain, making it virtually impossible to tamper with votes. Any attempt to modify a single 
+                      vote would break the chain's integrity and be immediately detected by comparing it with other users' copies.
                     </p>
                   </div>
                 </div>

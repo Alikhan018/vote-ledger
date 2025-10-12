@@ -206,7 +206,7 @@ export class DatabaseService {
   }
 
   // Vote operations
-  static async castVote(vote: Omit<Vote, 'id' | 'timestamp'>): Promise<{ success: boolean; voteId?: string; error?: string }> {
+  static async castVote(vote: Omit<Vote, 'id' | 'timestamp'>): Promise<{ success: boolean; voteId?: string; blockHash?: string; error?: string }> {
     try {
       // Check if user has already voted in this election
       const existingVote = await this.getUserVote(vote.voterId, vote.electionId);
@@ -216,10 +216,26 @@ export class DatabaseService {
 
       console.log('Casting vote:', vote);
 
-      // Create vote document
+      // Add vote to blockchain (distributed ledger)
+      const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
+      const blockchainResult = await BlockchainDatabaseService.addVoteBlockToAllUsers(
+        vote.electionId,
+        vote.candidateId,
+        vote.voterId
+      );
+
+      if (!blockchainResult.success) {
+        console.error('Blockchain add failed:', blockchainResult.error);
+        return { success: false, error: blockchainResult.error || 'Failed to add vote to blockchain' };
+      }
+
+      console.log('Vote added to blockchain:', blockchainResult.block?.hash);
+
+      // Create vote document with blockchain hash
       const docRef = await addDoc(collection(db, COLLECTIONS.VOTES), {
         ...vote,
         timestamp: serverTimestamp(),
+        transactionHash: blockchainResult.block?.hash,
       });
 
       console.log('Vote created with ID:', docRef.id);
@@ -231,7 +247,11 @@ export class DatabaseService {
       await this.updateElectionStats(vote.electionId);
 
       console.log('Vote cast successfully');
-      return { success: true, voteId: docRef.id };
+      return { 
+        success: true, 
+        voteId: docRef.id,
+        blockHash: blockchainResult.block?.hash,
+      };
     } catch (error: any) {
       console.error('Cast vote error:', error);
       return { success: false, error: error.message || 'Failed to cast vote' };
@@ -351,15 +371,48 @@ export class DatabaseService {
     }
   }
 
+  // Get all non-admin users (for voter statistics)
+  static async getNonAdminUsers(): Promise<VoteLedgerUser[]> {
+    try {
+      const querySnapshot = await getDocs(
+        query(
+          collection(db, COLLECTIONS.USERS),
+          where('isAdmin', '==', false)
+        )
+      );
+      return querySnapshot.docs.map(doc => ({
+        uid: doc.id,
+        ...doc.data(),
+        createdAt: (doc.data().createdAt as Timestamp)?.toDate(),
+        updatedAt: (doc.data().updatedAt as Timestamp)?.toDate(),
+      })) as VoteLedgerUser[];
+    } catch (error) {
+      console.error('Error getting non-admin users:', error);
+      // Fallback: filter manually if query fails
+      try {
+        const allUsers = await this.getAllUsers();
+        return allUsers.filter(user => !user.isAdmin);
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+        return [];
+      }
+    }
+  }
+
   static async getVoteStatistics(electionId: string): Promise<{
     totalVotes: number;
     candidateResults: { candidateId: string; candidateName: string; votes: number }[];
   }> {
     try {
       console.log('Getting vote statistics for election:', electionId);
+      
+      // Get votes from both voteCounts collection and blockchain for verification
       const voteCounts = await this.getVoteCounts(electionId);
+      const blockchainStats = await this.getBlockchainVoteStatistics(electionId);
+      
       const candidates = await this.getCandidates();
       
+      // Use voteCounts as primary source, blockchain as verification
       const totalVotes = voteCounts.reduce((sum, count) => sum + count.count, 0);
       
       const candidateResults = voteCounts.map(count => {
@@ -371,10 +424,49 @@ export class DatabaseService {
         };
       });
 
-      console.log('Vote statistics:', { totalVotes, candidateResults });
+      console.log('Vote statistics:', { 
+        totalVotes, 
+        candidateResults,
+        blockchainVotes: blockchainStats.totalVotes,
+        blockchainMatches: totalVotes === blockchainStats.totalVotes ? 'YES' : 'NO'
+      });
+      
       return { totalVotes, candidateResults };
     } catch (error) {
       console.error('Get vote statistics error:', error);
+      return { totalVotes: 0, candidateResults: [] };
+    }
+  }
+
+  // Get vote statistics from blockchain
+  static async getBlockchainVoteStatistics(electionId: string): Promise<{
+    totalVotes: number;
+    candidateResults: { candidateId: string; votes: number }[];
+  }> {
+    try {
+      // Get consensus blockchain
+      const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
+      const consensusChain = await BlockchainDatabaseService.getConsensusBlockchain();
+      
+      // Count votes from blockchain
+      const voteMap = new Map<string, number>();
+      
+      consensusChain.forEach(block => {
+        if (block.index > 0 && block.voteData.electionId === electionId) {
+          const candidateId = block.voteData.candidateId;
+          voteMap.set(candidateId, (voteMap.get(candidateId) || 0) + 1);
+        }
+      });
+      
+      const totalVotes = Array.from(voteMap.values()).reduce((sum, count) => sum + count, 0);
+      const candidateResults = Array.from(voteMap.entries()).map(([candidateId, votes]) => ({
+        candidateId,
+        votes,
+      }));
+      
+      return { totalVotes, candidateResults };
+    } catch (error) {
+      console.error('Get blockchain vote statistics error:', error);
       return { totalVotes: 0, candidateResults: [] };
     }
   }
@@ -384,9 +476,10 @@ export class DatabaseService {
     try {
       console.log('Updating election stats for:', electionId);
       const stats = await this.getVoteStatistics(electionId);
-      const allUsers = await this.getAllUsers();
+      // Use non-admin users only for voter statistics
+      const voters = await this.getNonAdminUsers();
       
-      const totalVoters = allUsers.length;
+      const totalVoters = voters.length;
       const totalVotes = stats.totalVotes;
       const turnoutPercentage = totalVoters > 0 
         ? Math.round((totalVotes / totalVoters) * 100 * 10) / 10

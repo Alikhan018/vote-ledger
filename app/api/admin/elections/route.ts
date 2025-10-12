@@ -43,14 +43,15 @@ export async function GET(request: NextRequest) {
         
         // Get fresh stats from database
         const stats = await DatabaseService.getVoteStatistics(election.id!);
-        const allUsers = await DatabaseService.getAllUsers();
+        // Use non-admin users only for voter statistics
+        const voters = await DatabaseService.getNonAdminUsers();
         
         return {
           ...election,
           totalVotes: stats.totalVotes,
-          totalVoters: allUsers.length,
-          turnoutPercentage: allUsers.length > 0 
-            ? Math.round((stats.totalVotes / allUsers.length) * 100 * 10) / 10
+          totalVoters: voters.length,
+          turnoutPercentage: voters.length > 0 
+            ? Math.round((stats.totalVotes / voters.length) * 100 * 10) / 10
             : 0,
         };
       })

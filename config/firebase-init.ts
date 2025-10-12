@@ -19,6 +19,21 @@ export interface VoteLedgerUser {
   isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
+  voteBlocks?: VoteBlock[]; // Distributed ledger - each user stores all vote blocks
+}
+
+// Vote block for blockchain
+export interface VoteBlock {
+  index: number;
+  timestamp: number;
+  voteData: {
+    electionId: string;
+    candidateId: string;
+    voterHash: string;
+  };
+  previousHash: string;
+  hash: string;
+  nonce: number;
 }
 
 // Candidate interface

@@ -24,6 +24,23 @@ interface User {
   isAdmin: boolean;
 }
 
+interface Election {
+  id: string;
+  title: string;
+  description: string;
+  startDate: Date;
+  endDate: Date;
+  status: 'upcoming' | 'active' | 'ended';
+  candidates: string[];
+  hasVoted: boolean;
+  userVote?: {
+    id: string;
+    candidateId: string;
+    timestamp: Date;
+    transactionHash: string;
+  } | null;
+}
+
 export default function CastVote() {
   const [user, setUser] = useState<User | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -33,6 +50,8 @@ export default function CastVote() {
   const [hasVoted, setHasVoted] = useState(false);
   const [electionStatus, setElectionStatus] = useState<'active' | 'inactive' | 'closed'>('active');
   const [transactionHash, setTransactionHash] = useState('');
+  const [activeElections, setActiveElections] = useState<Election[]>([]);
+  const [selectedElection, setSelectedElection] = useState<Election | null>(null);
   const router = useRouter();
   const candidatesRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -41,42 +60,67 @@ export default function CastVote() {
     const loadVotingData = async () => {
       try {
         const userData = localStorage.getItem('user');
-        if (!userData) {
+        const token = localStorage.getItem('token');
+        
+        if (!userData || !token) {
           router.push('/signin');
           return;
         }
         
         setUser(JSON.parse(userData));
         
-        // Import services dynamically to avoid SSR issues
-        const { DatabaseService } = await import('@/lib/database');
+        // Get all active elections from API
+        const response = await fetch('/api/vote/elections/active', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json();
         
-        // Get active election
-        const activeElection = await DatabaseService.getActiveElection();
-        if (!activeElection) {
+        if (data.success && data.elections) {
+          setActiveElections(data.elections);
+          
+          if (data.elections.length === 0) {
+            setElectionStatus('inactive');
+            setIsLoading(false);
+            return;
+          }
+          
+          // Select first election by default
+          const firstElection = data.elections[0];
+          setSelectedElection(firstElection);
+          setHasVoted(firstElection.hasVoted);
+          
+          // Load candidates for selected election
+          await loadCandidatesForElection(firstElection.id);
+          
+          setIsLoading(false);
+        } else {
+          console.error('Failed to load elections:', data.error);
           setElectionStatus('inactive');
           setIsLoading(false);
-          return;
         }
-        
-        // Get candidates for the active election
-        const allCandidates = await DatabaseService.getCandidates();
-        const electionCandidates = allCandidates.filter(candidate => 
-          candidate.id && activeElection.candidates.includes(candidate.id)
-        );
-        setCandidates(electionCandidates);
-        
-        // Check if user has already voted
-        const userVote = await DatabaseService.getUserVote(JSON.parse(userData).uid, activeElection.id!);
-        setHasVoted(!!userVote);
-        
-        // Store election info for voting
-        localStorage.setItem('activeElection', JSON.stringify(activeElection));
-        
-        setIsLoading(false);
       } catch (error) {
         console.error('Error loading voting data:', error);
         setIsLoading(false);
+      }
+    };
+
+    const loadCandidatesForElection = async (electionId: string) => {
+      try {
+        const { DatabaseService } = await import('@/lib/database');
+        const allCandidates = await DatabaseService.getCandidates();
+        const election = activeElections.find(e => e.id === electionId) || selectedElection;
+        
+        if (election) {
+          const electionCandidates = allCandidates.filter(candidate => 
+            candidate.id && election.candidates.includes(candidate.id)
+          );
+          setCandidates(electionCandidates);
+        }
+      } catch (error) {
+        console.error('Error loading candidates:', error);
       }
     };
     
@@ -108,8 +152,26 @@ export default function CastVote() {
     }
   }, [router]);
 
+  // Function to load candidates for a specific election
+  const loadCandidatesForElection = async (electionId: string) => {
+    try {
+      const { DatabaseService } = await import('@/lib/database');
+      const allCandidates = await DatabaseService.getCandidates();
+      const election = activeElections.find(e => e.id === electionId) || selectedElection;
+      
+      if (election) {
+        const electionCandidates = allCandidates.filter(candidate => 
+          candidate.id && election.candidates.includes(candidate.id)
+        );
+        setCandidates(electionCandidates);
+      }
+    } catch (error) {
+      console.error('Error loading candidates:', error);
+    }
+  };
+
   const handleVote = async () => {
-    if (!selectedCandidate || !user) return;
+    if (!selectedCandidate || !user || !selectedElection) return;
     
     setIsVoting(true);
     
@@ -124,28 +186,40 @@ export default function CastVote() {
     }
     
     try {
-      // Import services dynamically to avoid SSR issues
-      const { DatabaseService } = await import('@/lib/database');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No authentication token found');
+        setIsVoting(false);
+        return;
+      }
       
-      // Get active election from localStorage
-      const activeElection = JSON.parse(localStorage.getItem('activeElection') || '{}');
-      
-      // Cast vote in Firestore
-      const voteResult = await DatabaseService.castVote({
-        voterId: user.uid,
-        candidateId: selectedCandidate,
-        electionId: activeElection.id!,
+      // Cast vote using API
+      const response = await fetch('/api/vote/cast', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          candidateId: selectedCandidate,
+          electionId: selectedElection.id,
+        }),
       });
       
-      if (voteResult.success) {
-        // Generate mock transaction hash for blockchain simulation
-        const mockTransactionHash = '0x' + Math.random().toString(16).substr(2, 64);
-        setTransactionHash(mockTransactionHash);
+      const data = await response.json();
+      
+      if (data.success) {
+        // Use actual blockchain hash from vote result
+        const blockHash = data.blockHash || '';
+        setTransactionHash(blockHash);
         setHasVoted(true);
         
         // Store vote info in localStorage for display
         localStorage.setItem('votedCandidate', selectedCandidate);
-        localStorage.setItem('transactionHash', mockTransactionHash);
+        localStorage.setItem('transactionHash', blockHash);
+        
+        // Update selected election to show user has voted
+        setSelectedElection(prev => prev ? { ...prev, hasVoted: true } : null);
         
         // Success animation with confetti effect
         if (candidatesRef.current) {
@@ -158,13 +232,12 @@ export default function CastVote() {
           });
         }
       } else {
-        // Error handling
-        console.error('Vote failed:', voteResult.error);
-        // You could show an error message to the user here
+        console.error('Vote failed:', data.error);
+        alert(`Vote failed: ${data.error}`);
       }
     } catch (error) {
       console.error('Error casting vote:', error);
-      // You could show an error message to the user here
+      alert('Error casting vote. Please try again.');
     }
     
     setIsVoting(false);
@@ -251,7 +324,8 @@ export default function CastVote() {
                 Vote Cast Successfully!
               </h2>
               <p className="text-gray-300 mb-8 text-lg">
-                Your vote has been securely recorded on the blockchain and cannot be altered.
+                Your vote has been securely recorded on the distributed blockchain ledger across all users. 
+                The blockchain ensures your vote is tamper-proof and verifiable.
               </p>
               
               {votedCandidate && (
@@ -268,9 +342,12 @@ export default function CastVote() {
               )}
               
               <div className="bg-dark-secondary/50 p-6 rounded-xl mb-8 border border-blockchain-primary/20">
-                <h4 className="text-sm font-medium text-gray-400 mb-3">Transaction Hash:</h4>
+                <h4 className="text-sm font-medium text-gray-400 mb-3">Blockchain Block Hash:</h4>
                 <p className="text-xs text-blockchain-accent font-mono break-all bg-dark-primary/50 p-3 rounded">
                   {storedHash || transactionHash}
+                </p>
+                <p className="text-xs text-gray-500 mt-3">
+                  This hash is stored in all users' blockchain copies, ensuring vote integrity
                 </p>
               </div>
               
@@ -316,24 +393,72 @@ export default function CastVote() {
             <p className="text-gray-400 text-lg">Select your preferred candidate for the election</p>
           </div>
 
+          {/* Election Selection */}
+          {activeElections.length > 1 && (
+            <Card className="mb-8 glass-card border-blockchain-primary/30">
+              <CardContent className="p-6">
+                <h3 className="text-lg font-semibold text-white mb-4">Select Election to Vote In:</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeElections.map((election) => (
+                    <button
+                      key={election.id}
+                      onClick={() => {
+                        setSelectedElection(election);
+                        setHasVoted(election.hasVoted);
+                        setSelectedCandidate('');
+                        loadCandidatesForElection(election.id);
+                      }}
+                      className={`p-4 rounded-lg border-2 transition-all duration-300 ${
+                        selectedElection?.id === election.id
+                          ? 'border-blockchain-primary bg-blockchain-primary/20'
+                          : 'border-gray-600 bg-gray-800/50 hover:border-gray-500'
+                      }`}
+                    >
+                      <h4 className="font-semibold text-white mb-2">{election.title}</h4>
+                      <p className="text-sm text-gray-400 mb-3">{election.description}</p>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm ${election.hasVoted ? 'text-green-400' : 'text-yellow-400'}`}>
+                          {election.hasVoted ? '✓ Voted' : 'Not Voted'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {new Date(election.endDate).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Election Info */}
-          <Card className="mb-12 glass-card border-blockchain-primary/30">
-            <CardContent className="p-8">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-2xl font-semibold text-white mb-2">General Election 2024</h3>
-                  <p className="text-gray-400 text-lg">National Assembly Constituency</p>
+          {selectedElection && (
+            <Card className="mb-12 glass-card border-blockchain-primary/30">
+              <CardContent className="p-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-2xl font-semibold text-white mb-2">
+                      {selectedElection.title}
+                    </h3>
+                    <p className="text-gray-400 text-lg">
+                      {selectedElection.description}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Ends: {new Date(selectedElection.endDate).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-3 text-green-400">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-lg font-medium">Election Active</span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-3 text-green-400">
-                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                  <span className="text-lg font-medium">Election Active</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Candidates */}
-          <div ref={candidatesRef} className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+          {selectedElection && (
+            <div ref={candidatesRef} className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
             {candidates.map((candidate) => (
               <Card 
                 key={candidate.id}
@@ -360,36 +485,44 @@ export default function CastVote() {
                 </CardContent>
               </Card>
             ))}
-          </div>
+            </div>
+          )}
 
           {/* Vote Button */}
-          <div className="text-center mb-12">
-            <Button
-              onClick={handleVote}
-              disabled={!selectedCandidate || isVoting}
-              size="lg"
-              className="px-16 py-6 text-xl purple-gradient hover:scale-110 transition-all duration-300 neon-glow disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isVoting ? (
-                <div className="flex items-center space-x-3">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-                  <span>Processing Vote...</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-3">
-                  <Vote className="h-6 w-6" />
-                  <span>Cast Vote</span>
-                  <Zap className="h-6 w-6" />
-                </div>
+          {selectedElection && (
+            <div className="text-center mb-12">
+              <Button
+                onClick={handleVote}
+                disabled={!selectedCandidate || isVoting || hasVoted}
+                size="lg"
+                className="px-16 py-6 text-xl purple-gradient hover:scale-110 transition-all duration-300 neon-glow disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isVoting ? (
+                  <div className="flex items-center space-x-3">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                    <span>Processing Vote...</span>
+                  </div>
+                ) : hasVoted ? (
+                  <div className="flex items-center space-x-3">
+                    <Check className="h-6 w-6" />
+                    <span>Already Voted</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center space-x-3">
+                    <Vote className="h-6 w-6" />
+                    <span>Cast Vote</span>
+                    <Zap className="h-6 w-6" />
+                  </div>
+                )}
+              </Button>
+              
+              {!selectedCandidate && !hasVoted && (
+                <p className="text-gray-500 mt-4 text-lg">
+                  Please select a candidate to cast your vote
+                </p>
               )}
-            </Button>
-            
-            {!selectedCandidate && (
-              <p className="text-gray-500 mt-4 text-lg">
-                Please select a candidate to cast your vote
-              </p>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Security Notice */}
           <Card className="bg-blue-500/10 border border-blue-500/30">
@@ -397,9 +530,10 @@ export default function CastVote() {
               <div className="flex items-start space-x-4">
                 <AlertCircle className="h-6 w-6 text-blue-400 mt-1 flex-shrink-0" />
                 <div className="text-blue-300">
-                  <p className="font-medium mb-2 text-lg">Security Notice:</p>
+                  <p className="font-medium mb-2 text-lg">Blockchain Security:</p>
                   <p className="text-blue-200">
-                    Your vote will be encrypted and recorded on the blockchain. Once cast, it cannot be changed or deleted. 
+                    Your vote will be added as a new block to the distributed blockchain ledger. Every user stores a copy
+                    of all blocks, making tampering virtually impossible. Once cast, your vote cannot be changed or deleted. 
                     Please review your selection carefully before voting.
                   </p>
                 </div>

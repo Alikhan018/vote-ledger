@@ -130,6 +130,7 @@ export default function AdminPanel() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [emojiPickerPosition, setEmojiPickerPosition] = useState({ top: 0, left: 0 });
+  const [blockchainStats, setBlockchainStats] = useState<any>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
   const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -291,6 +292,7 @@ export default function AdminPanel() {
     loadCandidates();
     loadElections();
     loadAdminStats();
+    loadBlockchainStats();
     
     setIsLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -313,7 +315,7 @@ export default function AdminPanel() {
         await loadAdminStats();
         await checkElectionTiming();
       }
-    }, 30000);
+    }, 10000); // Refresh every 10 seconds instead of 30
 
     return () => {
       clearInterval(timeInterval);
@@ -930,9 +932,77 @@ useEffect(() => {
     setShowEmojiPicker(false);
   };
 
-  const handleEmojiClick = (emojiObject: any) => {
-    setNewCandidate(prev => ({ ...prev, symbol: emojiObject.emoji }));
+  const handleEmojiClick = (emojiData: any) => {
+    // Handle both old and new emoji-picker-react API
+    const emoji = emojiData.emoji || emojiData.native || emojiData;
+    setNewCandidate(prev => ({ ...prev, symbol: emoji }));
     setShowEmojiPicker(false);
+  };
+
+  // Load blockchain statistics
+  const loadBlockchainStats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return;
+
+      const response = await fetch('/api/admin/blockchain/stats', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setBlockchainStats(data.data);
+      }
+    } catch (error) {
+      console.error('Error loading blockchain stats:', error);
+    }
+  };
+
+  // Debug election votes
+  const debugElectionVotes = async (electionId: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const response = await fetch(`/api/debug/votes/${electionId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        console.log('Debug Info:', data.debugInfo);
+        toast({
+          title: 'Debug Info Retrieved',
+          description: `Check console for details. Votes: ${data.debugInfo.sources.votesCollection.totalVotes}, VoteCounts: ${data.debugInfo.sources.voteCountsCollection.totalVotes}, Blockchain: ${data.debugInfo.sources.blockchain.totalVotes}`,
+          className: 'bg-blue-500/10 border-blue-500/50',
+        });
+      } else {
+        toast({
+          title: 'Debug Error',
+          description: data.error || 'Failed to get debug info',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Debug error:', error);
+      toast({
+        title: 'Debug Error',
+        description: 'Failed to debug votes',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (isLoading) {
@@ -1433,16 +1503,29 @@ useEffect(() => {
                         {elections.length}
                       </Badge>
                     </CardTitle>
-                    <Button
-                      onClick={() => loadElections(true)}
-                      variant="outline"
-                      size="sm"
-                      disabled={refreshLoading}
-                      className="flex items-center space-x-2"
-                    >
-                      <RefreshCw className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
-                      <span>{refreshLoading ? 'Refreshing...' : 'Refresh'}</span>
-                    </Button>
+                    <div className="flex space-x-2">
+                      <Button
+                        onClick={() => loadElections(true)}
+                        variant="outline"
+                        size="sm"
+                        disabled={refreshLoading}
+                        className="flex items-center space-x-2"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
+                        <span>{refreshLoading ? 'Refreshing...' : 'Refresh'}</span>
+                      </Button>
+                      {activeElection && (
+                        <Button
+                          onClick={() => debugElectionVotes(activeElection.id)}
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center space-x-2"
+                        >
+                          <Activity className="h-4 w-4" />
+                          <span>Debug Votes</span>
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1752,7 +1835,11 @@ useEffect(() => {
                               maxWidth: '350px',
                             }}
                           >
-                            <EmojiPicker onEmojiClick={handleEmojiClick} />
+                            <EmojiPicker 
+                              onEmojiClick={handleEmojiClick}
+                              width="100%"
+                              height={400}
+                            />
                           </div>
                         </>,
                         document.body
