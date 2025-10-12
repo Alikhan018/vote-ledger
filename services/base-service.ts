@@ -21,13 +21,22 @@ export class BaseService {
       // For Next.js API routes, use relative paths (no baseUrl needed)
       const url = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
       
+      console.log(`Making API request to: ${url}`);
+      
+      // Add timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
       const response = await fetch(url, {
         ...options,
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,
         },
       });
+
+      clearTimeout(timeoutId);
 
       // Check if response is JSON
       const contentType = response.headers.get('content-type');
@@ -46,6 +55,10 @@ export class BaseService {
       
       return data as T;
     } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error(`API Timeout (${endpoint}): Request took too long`);
+        throw new Error('Request timeout: The server is taking too long to respond');
+      }
       console.error(`API Error (${endpoint}):`, error);
       throw error;
     }

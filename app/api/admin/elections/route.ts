@@ -31,12 +31,17 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get all elections
+    // Get all elections from database
     const elections = await DatabaseService.getElections();
+    console.log('Retrieved elections from database:', elections.length);
 
-    // Get statistics for each election
+    // Update statistics for each election and return with fresh data
     const electionsWithStats = await Promise.all(
       elections.map(async (election) => {
+        // Update stats in database
+        await DatabaseService.updateElectionStats(election.id!);
+        
+        // Get fresh stats from database
         const stats = await DatabaseService.getVoteStatistics(election.id!);
         const allUsers = await DatabaseService.getAllUsers();
         
@@ -51,6 +56,7 @@ export async function GET(request: NextRequest) {
       })
     );
 
+    console.log('Returning elections with stats:', electionsWithStats.length);
     return NextResponse.json({
       success: true,
       elections: electionsWithStats,
@@ -130,7 +136,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create election
+    // Create election in database
     console.log('Creating election in database...');
     const electionId = await DatabaseService.createElection({
       title,
@@ -152,11 +158,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the created election
-    console.log('Fetching created election...');
+    // Update election statistics
+    console.log('Updating election statistics...');
+    await DatabaseService.updateElectionStats(electionId);
+
+    // Get the created election with fresh data
+    console.log('Fetching created election from database...');
     const elections = await DatabaseService.getElections();
     const election = elections.find(e => e.id === electionId);
     console.log('Found election:', election);
+
+    if (!election) {
+      console.log('Warning: Created election not found in list');
+      // Return basic election data instead of failing
+      const basicElection = {
+        id: electionId,
+        title,
+        description,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        status: 'upcoming',
+        candidates: candidates || [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        totalVotes: 0,
+        totalVoters: 0,
+        turnoutPercentage: 0,
+      };
+      return NextResponse.json({
+        success: true,
+        election: basicElection,
+      });
+    }
 
     return NextResponse.json({
       success: true,

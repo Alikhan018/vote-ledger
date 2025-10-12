@@ -212,6 +212,37 @@ export class AdminElectionsService extends BaseService {
   }
 
   /**
+   * Update an election
+   */
+  static async updateElection(id: string, data: CreateElectionRequest): Promise<ElectionResponse> {
+    try {
+      const token = this.getToken();
+      if (!token) {
+        return { success: false, error: 'Authentication required' };
+      }
+
+      const response = await this.fetchApi<ElectionResponse>(
+        `${this.BASE_URL}/${id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(data),
+        }
+      );
+
+      return response;
+    } catch (error: any) {
+      console.error('Update election error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to update election',
+      };
+    }
+  }
+
+  /**
    * Delete an election
    */
   static async deleteElection(id: string): Promise<ApiResponse> {

@@ -42,6 +42,9 @@ export interface Election {
   candidates: string[];
   createdAt: Date;
   updatedAt: Date;
+  totalVotes?: number;
+  totalVoters?: number;
+  turnoutPercentage?: number;
 }
 
 // Vote interface

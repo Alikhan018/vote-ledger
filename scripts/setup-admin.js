@@ -93,6 +93,19 @@ async function createAdminUser(config) {
     const existingUser = await checkAdminExists(config.cnic);
     if (existingUser) {
       console.log('✅ Admin user already exists:', existingUser.email);
+      console.log('🔧 Updating custom claims for existing user...');
+      
+      // Set custom claims for existing user
+      await auth.setCustomUserClaims(existingUser.uid, { isAdmin: true });
+      console.log('✅ Set admin custom claims in Firebase Auth');
+      
+      // Update Firestore to ensure isAdmin is true
+      await db.collection('users').doc(existingUser.uid).update({
+        isAdmin: true,
+        updatedAt: new Date(),
+      });
+      console.log('✅ Updated admin status in Firestore');
+      
       return { success: true, user: existingUser };
     }
 
@@ -104,6 +117,10 @@ async function createAdminUser(config) {
     });
 
     console.log('✅ Created Firebase Auth user:', userRecord.uid);
+
+    // Set custom claims for admin authorization
+    await auth.setCustomUserClaims(userRecord.uid, { isAdmin: true });
+    console.log('✅ Set admin custom claims in Firebase Auth');
 
     // Create user profile in Firestore
     const userProfile = {

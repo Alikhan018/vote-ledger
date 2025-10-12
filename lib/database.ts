@@ -94,9 +94,15 @@ export class DatabaseService {
         endDate: election.endDate instanceof Date ? Timestamp.fromDate(election.endDate) : election.endDate,
         createdAt: election.createdAt instanceof Date ? Timestamp.fromDate(election.createdAt) : serverTimestamp(),
         updatedAt: election.updatedAt instanceof Date ? Timestamp.fromDate(election.updatedAt) : serverTimestamp(),
+        // Initialize vote statistics
+        totalVotes: 0,
+        totalVoters: 0,
+        turnoutPercentage: 0,
       };
       
+      console.log('Saving election to database:', electionData);
       const docRef = await addDoc(collection(db, COLLECTIONS.ELECTIONS), electionData);
+      console.log('Election saved with ID:', docRef.id);
       return docRef.id;
     } catch (error) {
       console.error('Create election error:', error);
@@ -154,13 +160,47 @@ export class DatabaseService {
 
   static async updateElection(id: string, data: Partial<Election>): Promise<boolean> {
     try {
+      console.log('Updating election:', id, 'with data:', data);
       await updateDoc(doc(db, COLLECTIONS.ELECTIONS, id), {
         ...data,
         updatedAt: serverTimestamp(),
       });
+      console.log('Election updated successfully');
       return true;
     } catch (error) {
       console.error('Update election error:', error);
+      return false;
+    }
+  }
+
+  static async deleteElection(id: string): Promise<boolean> {
+    try {
+      console.log('Deleting election:', id);
+      
+      // Check if election has votes
+      const votes = await this.getVotesByElection(id);
+      if (votes.length > 0) {
+        console.log('Cannot delete election with existing votes');
+        return false;
+      }
+
+      // Delete vote counts for this election
+      const voteCountsQuery = query(
+        collection(db, COLLECTIONS.VOTE_COUNTS),
+        where('electionId', '==', id)
+      );
+      const voteCountsSnapshot = await getDocs(voteCountsQuery);
+      
+      for (const docSnapshot of voteCountsSnapshot.docs) {
+        await deleteDoc(docSnapshot.ref);
+      }
+
+      // Delete the election
+      await deleteDoc(doc(db, COLLECTIONS.ELECTIONS, id));
+      console.log('Election deleted successfully');
+      return true;
+    } catch (error) {
+      console.error('Delete election error:', error);
       return false;
     }
   }
@@ -174,15 +214,23 @@ export class DatabaseService {
         return { success: false, error: 'You have already voted in this election' };
       }
 
+      console.log('Casting vote:', vote);
+
       // Create vote document
       const docRef = await addDoc(collection(db, COLLECTIONS.VOTES), {
         ...vote,
         timestamp: serverTimestamp(),
       });
 
+      console.log('Vote created with ID:', docRef.id);
+
       // Update vote count
       await this.updateVoteCount(vote.electionId, vote.candidateId, 1);
 
+      // Update election statistics
+      await this.updateElectionStats(vote.electionId);
+
+      console.log('Vote cast successfully');
       return { success: true, voteId: docRef.id };
     } catch (error: any) {
       console.error('Cast vote error:', error);
@@ -308,6 +356,7 @@ export class DatabaseService {
     candidateResults: { candidateId: string; candidateName: string; votes: number }[];
   }> {
     try {
+      console.log('Getting vote statistics for election:', electionId);
       const voteCounts = await this.getVoteCounts(electionId);
       const candidates = await this.getCandidates();
       
@@ -322,10 +371,41 @@ export class DatabaseService {
         };
       });
 
+      console.log('Vote statistics:', { totalVotes, candidateResults });
       return { totalVotes, candidateResults };
     } catch (error) {
       console.error('Get vote statistics error:', error);
       return { totalVotes: 0, candidateResults: [] };
+    }
+  }
+
+  // Update election statistics in the database
+  static async updateElectionStats(electionId: string): Promise<boolean> {
+    try {
+      console.log('Updating election stats for:', electionId);
+      const stats = await this.getVoteStatistics(electionId);
+      const allUsers = await this.getAllUsers();
+      
+      const totalVoters = allUsers.length;
+      const totalVotes = stats.totalVotes;
+      const turnoutPercentage = totalVoters > 0 
+        ? Math.round((totalVotes / totalVoters) * 100 * 10) / 10
+        : 0;
+
+      console.log('Calculated stats:', { totalVoters, totalVotes, turnoutPercentage });
+
+      await updateDoc(doc(db, COLLECTIONS.ELECTIONS, electionId), {
+        totalVotes,
+        totalVoters,
+        turnoutPercentage,
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log('Election stats updated successfully');
+      return true;
+    } catch (error) {
+      console.error('Update election stats error:', error);
+      return false;
     }
   }
 }

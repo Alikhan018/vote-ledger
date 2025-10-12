@@ -77,6 +77,119 @@ export async function GET(
 }
 
 /**
+ * PUT /api/admin/elections/[id]
+ * Update an election
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Verify authentication
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await adminAuth.verifyIdToken(token);
+
+    // Check if user is admin
+    const userDoc = await adminAuth.getUser(decodedToken.uid);
+    const isAdmin = userDoc.customClaims?.isAdmin === true;
+
+    if (!isAdmin) {
+      return NextResponse.json(
+        { success: false, error: 'Forbidden: Admin access required' },
+        { status: 403 }
+      );
+    }
+
+    const { id } = params;
+    const body = await request.json();
+    const { title, description, startDate, endDate, candidates } = body;
+
+    // Validate required fields
+    if (!title || !description || !startDate || !endDate) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Convert dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Validate dates
+    if (end <= start) {
+      return NextResponse.json(
+        { success: false, error: 'End date must be after start date' },
+        { status: 400 }
+      );
+    }
+
+    // Update election
+    const success = await DatabaseService.updateElection(id, {
+      title,
+      description,
+      startDate: start,
+      endDate: end,
+      candidates: candidates || [],
+    });
+
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: 'Failed to update election' },
+        { status: 500 }
+      );
+    }
+
+    // Get updated election
+    const elections = await DatabaseService.getElections();
+    const election = elections.find(e => e.id === id);
+
+    if (!election) {
+      return NextResponse.json(
+        { success: false, error: 'Election not found after update' },
+        { status: 404 }
+      );
+    }
+
+    // Get statistics
+    const stats = await DatabaseService.getVoteStatistics(election.id!);
+    const allUsers = await DatabaseService.getAllUsers();
+
+    const electionWithStats = {
+      ...election,
+      totalVotes: stats.totalVotes,
+      totalVoters: allUsers.length,
+      turnoutPercentage: allUsers.length > 0 
+        ? Math.round((stats.totalVotes / allUsers.length) * 100 * 10) / 10
+        : 0,
+    };
+
+    return NextResponse.json({
+      success: true,
+      election: electionWithStats,
+      message: 'Election updated successfully',
+    });
+  } catch (error: any) {
+    console.error('Update election error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'Failed to update election',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * DELETE /api/admin/elections/[id]
  * Delete an election
  */
@@ -110,11 +223,21 @@ export async function DELETE(
 
     const { id } = params;
 
-    // Note: You might want to add a deleteElection method to DatabaseService
-    // For now, we'll just return success as a placeholder
+    console.log('Deleting election:', id);
+
+    // Delete the election
+    const success = await DatabaseService.deleteElection(id);
+
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: 'Failed to delete election. Make sure it has no votes.' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Election deletion not implemented yet',
+      message: 'Election deleted successfully',
     });
   } catch (error: any) {
     console.error('Delete election error:', error);

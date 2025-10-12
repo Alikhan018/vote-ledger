@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:firebase": "node ./scripts/test-firebase-connection.js"
+    "setup-admin": "node ./scripts/setup-admin.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

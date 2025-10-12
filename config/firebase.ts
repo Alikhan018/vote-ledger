@@ -22,8 +22,9 @@ export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-// Connect to emulators in development
-if (process.env.NODE_ENV === 'development') {
+// Connect to emulators in development (DISABLED - using production Firebase)
+// To enable emulators, set USE_FIREBASE_EMULATOR=true in .env.local
+if (process.env.NODE_ENV === 'development' && process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATOR === 'true') {
   // Auth emulator
   if (!auth.emulatorConfig) {
     connectAuthEmulator(auth, 'http://localhost:9099');
@@ -44,6 +45,8 @@ if (process.env.NODE_ENV === 'development') {
     // Emulator already connected or other error
     console.log('Storage emulator connection skipped:', error);
   }
+} else {
+  console.log('Using production Firebase (emulators disabled)');
 }
 
 export default app;
