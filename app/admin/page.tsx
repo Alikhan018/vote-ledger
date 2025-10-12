@@ -324,18 +324,16 @@ export default function AdminPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, refreshLoading, electionLoading]);
 
-  // Check election timing and automatically start/end elections
+  // Check election timing and automatically start/end elections based on scheduled times
   const checkElectionTiming = async () => {
     try {
-      const now = new Date();
       let hasChanges = false;
 
       for (const election of elections) {
-        const startDate = election.startDate instanceof Date ? election.startDate : new Date(election.startDate);
-        const endDate = election.endDate instanceof Date ? election.endDate : new Date(election.endDate);
+        const timing = getElectionTiming(election);
 
-        // Auto-start election if start time has passed and status is upcoming
-        if (election.status === 'upcoming' && now >= startDate) {
+        // Auto-start election if scheduled start time has passed and status is upcoming
+        if (timing.shouldAutoStart) {
           console.log('Auto-starting election:', election.title);
           const response = await AdminElectionsService.updateElectionStatus(election.id!, 'active');
           if (response.success) {
@@ -348,8 +346,8 @@ export default function AdminPanel() {
           }
         }
 
-        // Auto-end election if end time has passed and status is active
-        if (election.status === 'active' && now >= endDate) {
+        // Auto-end election if scheduled end time has passed and status is active
+        if (timing.shouldAutoEnd) {
           console.log('Auto-ending election:', election.title);
           const response = await AdminElectionsService.updateElectionStatus(election.id!, 'ended');
           if (response.success) {
@@ -545,9 +543,13 @@ useEffect(() => {
       endDate,
       timeUntilStart,
       timeUntilEnd,
-      canStart: election.status === 'upcoming' && now >= startDate,
-      canEnd: election.status === 'active' && now < endDate,
-      canDeploy: election.status === 'ended' || now >= endDate,
+      // Manual controls - can start/end anytime based on status only
+      canStart: election.status === 'upcoming',
+      canEnd: election.status === 'active',
+      canDeploy: election.status === 'ended',
+      // Timing checks for auto-start/end and display
+      shouldAutoStart: election.status === 'upcoming' && now >= startDate,
+      shouldAutoEnd: election.status === 'active' && now >= endDate,
       isActive: now >= startDate && now < endDate,
       isEnded: now >= endDate
     };
@@ -575,14 +577,12 @@ useEffect(() => {
 
     const timing = getElectionTiming(election);
     
-    // Check timing restrictions
+    // Check status-based restrictions (not timing-based)
     if (action === 'activate') {
       if (!timing.canStart) {
         toast({
           title: 'Cannot Start Election',
-          description: timing.timeUntilStart > 0 
-            ? `Election will start in ${formatTimeRemaining(timing.timeUntilStart)}`
-            : 'Election cannot be started at this time',
+          description: 'Election must be in "upcoming" status to start',
           variant: 'destructive',
         });
         return;
@@ -591,7 +591,7 @@ useEffect(() => {
       if (!timing.canEnd) {
         toast({
           title: 'Cannot Close Election',
-          description: 'Election can only be closed during active period',
+          description: 'Election must be "active" to close',
           variant: 'destructive',
         });
         return;
