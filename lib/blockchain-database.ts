@@ -65,9 +65,11 @@ export class BlockchainDatabaseService {
    */
   static async getConsensusBlockchain(): Promise<VoteBlock[]> {
     try {
+      console.log('Getting consensus blockchain...');
       const usersSnapshot = await getDocs(collection(db, COLLECTIONS.USERS));
       
       if (usersSnapshot.empty) {
+        console.log('No users found, returning genesis block');
         return [GENESIS_BLOCK];
       }
 
@@ -76,11 +78,15 @@ export class BlockchainDatabaseService {
       usersSnapshot.docs.forEach(doc => {
         const userData = doc.data();
         if (userData.voteBlocks && Array.isArray(userData.voteBlocks)) {
+          console.log(`User ${doc.id} has ${userData.voteBlocks.length} blocks`);
           chains.push(userData.voteBlocks);
+        } else {
+          console.log(`User ${doc.id} has no voteBlocks`);
         }
       });
 
       if (chains.length === 0) {
+        console.log('No valid chains found, returning genesis block');
         return [GENESIS_BLOCK];
       }
 
@@ -139,12 +145,16 @@ export class BlockchainDatabaseService {
       const currentChain = await this.getConsensusBlockchain();
       
       // Validate current chain
+      console.log('Validating current chain with', currentChain.length, 'blocks');
       if (!isValidChain(currentChain)) {
+        console.error('Blockchain validation failed:', currentChain);
         return { 
           success: false, 
           error: 'Current blockchain is invalid. System integrity compromised.' 
         };
       }
+      
+      console.log('Blockchain validation passed');
 
       // Create new block
       const lastBlock = getLastBlock(currentChain);

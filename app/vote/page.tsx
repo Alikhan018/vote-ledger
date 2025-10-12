@@ -60,7 +60,7 @@ export default function CastVote() {
     const loadVotingData = async () => {
       try {
         const userData = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
+        const token = localStorage.getItem('idToken');
         
         if (!userData || !token) {
           router.push('/signin');
@@ -70,18 +70,34 @@ export default function CastVote() {
         setUser(JSON.parse(userData));
         
         // Get all active elections from API
+        console.log('Fetching active elections with token:', token ? 'Present' : 'Missing');
         const response = await fetch('/api/vote/elections/active', {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
         });
 
+        console.log('Active elections API response status:', response.status);
+        
+        if (response.status === 401) {
+          console.error('Authentication failed');
+          alert('Your session has expired. Please log in again.');
+          localStorage.removeItem('idToken');
+          localStorage.removeItem('user');
+          router.push('/signin');
+          setIsLoading(false);
+          return;
+        }
+
         const data = await response.json();
+        console.log('Active elections API response data:', data);
         
         if (data.success && data.elections) {
+          console.log('Found elections:', data.elections.length);
           setActiveElections(data.elections);
           
           if (data.elections.length === 0) {
+            console.log('No active elections found');
             setElectionStatus('inactive');
             setIsLoading(false);
             return;
@@ -89,6 +105,7 @@ export default function CastVote() {
           
           // Select first election by default
           const firstElection = data.elections[0];
+          console.log('Selected election:', firstElection);
           setSelectedElection(firstElection);
           setHasVoted(firstElection.hasVoted);
           
@@ -98,6 +115,7 @@ export default function CastVote() {
           setIsLoading(false);
         } else {
           console.error('Failed to load elections:', data.error);
+          alert(`Failed to load elections: ${data.error || 'Unknown error'}`);
           setElectionStatus('inactive');
           setIsLoading(false);
         }
@@ -186,12 +204,18 @@ export default function CastVote() {
     }
     
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        console.error('No authentication token found');
+      const token = localStorage.getItem('idToken');
+      const userData = localStorage.getItem('user');
+      
+      if (!token || !userData) {
+        console.error('No authentication token or user data found');
+        alert('Authentication required. Please log in again.');
+        router.push('/signin');
         setIsVoting(false);
         return;
       }
+      
+      console.log('Casting vote for election:', selectedElection.id, 'candidate:', selectedCandidate);
       
       // Cast vote using API
       const response = await fetch('/api/vote/cast', {
@@ -206,7 +230,20 @@ export default function CastVote() {
         }),
       });
       
+      console.log('Vote API response status:', response.status);
+      
+      if (response.status === 401) {
+        console.error('Authentication failed - token expired');
+        alert('Your session has expired. Please log in again.');
+        localStorage.removeItem('idToken');
+        localStorage.removeItem('user');
+        router.push('/signin');
+        setIsVoting(false);
+        return;
+      }
+      
       const data = await response.json();
+      console.log('Vote API response:', data);
       
       if (data.success) {
         // Use actual blockchain hash from vote result
@@ -231,6 +268,8 @@ export default function CastVote() {
             ease: "back.out(1.7)"
           });
         }
+        
+        alert('Vote cast successfully! Your vote has been recorded on the blockchain.');
       } else {
         console.error('Vote failed:', data.error);
         alert(`Vote failed: ${data.error}`);
@@ -522,6 +561,91 @@ export default function CastVote() {
                 </p>
               )}
             </div>
+          )}
+
+          {/* Debug Info (remove in production) */}
+          {process.env.NODE_ENV === 'development' && (
+            <Card className="bg-gray-800/50 border border-gray-600">
+              <CardContent className="p-4">
+                <h4 className="text-sm font-medium text-gray-300 mb-2">Debug Info:</h4>
+                <div className="text-xs text-gray-400 space-y-1">
+                  <p>Token: {localStorage.getItem('idToken') ? '✅ Present' : '❌ Missing'}</p>
+                  <p>User: {localStorage.getItem('user') ? '✅ Present' : '❌ Missing'}</p>
+                  <p>Active Elections: {activeElections.length}</p>
+                  <p>Selected Election: {selectedElection?.id || 'None'}</p>
+                  <p>Selected Candidate: {selectedCandidate || 'None'}</p>
+                  <p>Has Voted: {hasVoted ? 'Yes' : 'No'}</p>
+                </div>
+                <div className="mt-3 flex space-x-2">
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem('idToken');
+                        const response = await fetch('/api/debug/elections', {
+                          headers: { 'Authorization': `Bearer ${token}` },
+                        });
+                        const data = await response.json();
+                        console.log('Debug Elections:', data);
+                        alert(`Found ${data.debugInfo?.elections?.active || 0} active elections. Check console for details.`);
+                      } catch (error) {
+                        console.error('Debug error:', error);
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Debug Elections
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      console.log('Active Elections State:', activeElections);
+                      console.log('Selected Election State:', selectedElection);
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Log State
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/test/elections');
+                        const data = await response.json();
+                        console.log('Test Elections (No Auth):', data);
+                        alert(`Found ${data.data?.activeElections || 0} active elections out of ${data.data?.totalElections || 0} total. Check console for details.`);
+                      } catch (error) {
+                        console.error('Test error:', error);
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Test Elections
+                  </Button>
+                  <Button
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/health');
+                        const data = await response.json();
+                        console.log('Health Check:', data);
+                        alert(`Server Status: ${data.success ? '✅ Running' : '❌ Error'}\nEnvironment: ${data.environment}\nTime: ${data.timestamp}`);
+                      } catch (error) {
+                        console.error('Health check error:', error);
+                        alert('❌ Server not responding');
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Health Check
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           )}
 
           {/* Security Notice */}

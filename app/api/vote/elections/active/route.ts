@@ -14,8 +14,13 @@ export async function GET(request: NextRequest) {
     // Initialize Firebase Admin
     const adminApp = initializeFirebaseAdmin();
     if (!adminApp) {
+      console.error('Firebase Admin not initialized - check your environment configuration');
       return NextResponse.json(
-        { success: false, error: 'Firebase Admin not initialized' },
+        { 
+          success: false, 
+          error: 'Firebase Admin not initialized. Please check your Firebase configuration.',
+          details: 'Make sure FIREBASE_SERVICE_ACCOUNT or GOOGLE_APPLICATION_CREDENTIALS is set in your environment variables.'
+        },
         { status: 500 }
       );
     }
@@ -35,6 +40,8 @@ export async function GET(request: NextRequest) {
     const auth = getAuth(adminApp);
     const decodedToken = await auth.verifyIdToken(token);
     const userId = decodedToken.uid;
+    
+    console.log('Active elections API - User ID:', userId);
 
     const db = getFirestore(adminApp);
 
@@ -43,6 +50,8 @@ export async function GET(request: NextRequest) {
       .collection('elections')
       .where('status', '==', 'active')
       .get();
+
+    console.log('Found active elections in database:', activeElectionsSnapshot.size);
 
     const activeElections = activeElectionsSnapshot.docs.map(doc => ({
       id: doc.id,
@@ -56,6 +65,8 @@ export async function GET(request: NextRequest) {
     // For each election, check if user has voted
     const electionsWithVoteStatus = await Promise.all(
       activeElections.map(async (election) => {
+        console.log(`Checking vote status for election ${election.id} and user ${userId}`);
+        
         const voteQuery = await db
           .collection('votes')
           .where('voterId', '==', userId)
@@ -63,9 +74,12 @@ export async function GET(request: NextRequest) {
           .limit(1)
           .get();
 
+        const hasVoted = !voteQuery.empty;
+        console.log(`User ${userId} has voted in election ${election.id}:`, hasVoted);
+
         return {
           ...election,
-          hasVoted: !voteQuery.empty,
+          hasVoted,
           userVote: voteQuery.empty ? null : {
             id: voteQuery.docs[0].id,
             candidateId: voteQuery.docs[0].data().candidateId,
@@ -76,6 +90,8 @@ export async function GET(request: NextRequest) {
       })
     );
 
+    console.log('Returning elections with vote status:', electionsWithVoteStatus.length);
+    
     return NextResponse.json({
       success: true,
       elections: electionsWithVoteStatus,

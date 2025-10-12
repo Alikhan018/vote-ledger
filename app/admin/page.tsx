@@ -942,7 +942,7 @@ useEffect(() => {
   // Load blockchain statistics
   const loadBlockchainStats = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('idToken');
       if (!token) return;
 
       const response = await fetch('/api/admin/blockchain/stats', {
@@ -963,7 +963,7 @@ useEffect(() => {
   // Debug election votes
   const debugElectionVotes = async (electionId: string) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('idToken');
       if (!token) {
         toast({
           title: 'Error',
@@ -1000,6 +1000,54 @@ useEffect(() => {
       toast({
         title: 'Debug Error',
         description: 'Failed to debug votes',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Repair blockchain
+  const repairBlockchain = async () => {
+    try {
+      const token = localStorage.getItem('idToken');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const response = await fetch('/api/admin/blockchain/repair', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: 'Blockchain Repaired',
+          description: `${data.repairedUsers} users were updated. Total users: ${data.totalUsers}`,
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+        
+        // Reload blockchain stats
+        await loadBlockchainStats();
+      } else {
+        toast({
+          title: 'Repair Failed',
+          description: data.error || 'Failed to repair blockchain',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Repair blockchain error:', error);
+      toast({
+        title: 'Repair Error',
+        description: 'Failed to repair blockchain',
         variant: 'destructive',
       });
     }
@@ -1525,6 +1573,15 @@ useEffect(() => {
                           <span>Debug Votes</span>
                         </Button>
                       )}
+                      <Button
+                        onClick={repairBlockchain}
+                        variant="outline"
+                        size="sm"
+                        className="flex items-center space-x-2 text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        <span>Repair Blockchain</span>
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
