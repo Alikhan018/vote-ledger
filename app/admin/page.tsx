@@ -176,10 +176,10 @@ export default function AdminPanel() {
       if (response.success && response.stats) {
         setAdminStats(response.stats);
         
-        // Update election stats with active election data
+        // Update election stats with overall data (not just active election)
         setElectionStats({
-          totalVoters: response.stats.activeElection.totalVoters,
-          totalVotes: response.stats.activeElection.totalVotes,
+          totalVoters: response.stats.overview.totalUsers,
+          totalVotes: response.stats.overview.totalVotesAllTime,
           turnoutPercentage: response.stats.activeElection.turnoutPercentage,
           status: response.stats.activeElection.status,
         });

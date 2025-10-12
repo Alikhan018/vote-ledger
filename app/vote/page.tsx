@@ -249,7 +249,7 @@ export default function CastVote() {
         // Use actual blockchain hash from vote result
         const blockHash = data.blockHash || '';
         setTransactionHash(blockHash);
-        setHasVoted(true);
+        setHasVoted(true); // This is for the currently selected election only
         
         // Store vote info in localStorage for display
         localStorage.setItem('votedCandidate', selectedCandidate);
@@ -257,6 +257,13 @@ export default function CastVote() {
         
         // Update selected election to show user has voted
         setSelectedElection(prev => prev ? { ...prev, hasVoted: true } : null);
+        
+        // Update the active elections list to reflect the vote
+        setActiveElections(prev => prev.map(election => 
+          election.id === selectedElection.id 
+            ? { ...election, hasVoted: true }
+            : election
+        ));
         
         // Success animation with confetti effect
         if (candidatesRef.current) {
@@ -446,6 +453,8 @@ export default function CastVote() {
                         setHasVoted(election.hasVoted);
                         setSelectedCandidate('');
                         loadCandidatesForElection(election.id);
+                        // Clear any previous vote success state
+                        setTransactionHash('');
                       }}
                       className={`p-4 rounded-lg border-2 transition-all duration-300 ${
                         selectedElection?.id === election.id

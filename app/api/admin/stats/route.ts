@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
       // Get unique voters for this election
       const uniqueVoters = new Set();
       votesSnapshot.forEach(voteDoc => {
-        uniqueVoters.add(voteDoc.data().voterCNIC);
+        uniqueVoters.add(voteDoc.data().voterId); // Fixed: use voterId instead of voterCNIC
       });
       const voterCount = uniqueVoters.size;
       totalVotersAllTime = Math.max(totalVotersAllTime, voterCount);
@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
       const voteCount = votesSnapshot.size;
       const uniqueVoters = new Set();
       votesSnapshot.forEach(voteDoc => {
-        uniqueVoters.add(voteDoc.data().voterCNIC);
+        uniqueVoters.add(voteDoc.data().voterId); // Fixed: use voterId instead of voterCNIC
       });
 
       activeElectionStats = {
