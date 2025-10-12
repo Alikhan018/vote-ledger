@@ -8,12 +8,13 @@ import CryptoJS from 'crypto-js';
 
 /**
  * Structure of a vote block in the blockchain
+ * Each election has its own independent blockchain
  */
 export interface VoteBlock {
   index: number;
   timestamp: number;
+  electionId: string; // Election ID is part of the block structure
   voteData: {
-    electionId: string;
     candidateId: string;
     // Voter ID is hashed for privacy
     voterHash: string;
@@ -24,23 +25,40 @@ export interface VoteBlock {
 }
 
 /**
- * Genesis block - the first block in the chain
+ * Create genesis block for a specific election
  */
+export function createGenesisBlock(electionId: string): VoteBlock {
+  const genesisBlock: VoteBlock = {
+    index: 0,
+    timestamp: 1697040000000, // Fixed timestamp for genesis
+    electionId: electionId,
+    voteData: {
+      candidateId: 'genesis',
+      voterHash: 'genesis',
+    },
+    previousHash: '0',
+    hash: '',
+    nonce: 0,
+  };
+  
+  // Calculate genesis block hash
+  genesisBlock.hash = calculateBlockHash(genesisBlock);
+  return genesisBlock;
+}
+
+// Legacy: Keep old GENESIS_BLOCK for backward compatibility (will be removed)
 export const GENESIS_BLOCK: VoteBlock = {
   index: 0,
-  timestamp: 1697040000000, // Fixed timestamp for genesis
+  timestamp: 1697040000000,
+  electionId: 'legacy',
   voteData: {
-    electionId: 'genesis',
     candidateId: 'genesis',
     voterHash: 'genesis',
   },
   previousHash: '0',
-  hash: '',
+  hash: 'legacy-genesis-hash',
   nonce: 0,
 };
-
-// Calculate genesis block hash
-GENESIS_BLOCK.hash = calculateBlockHash(GENESIS_BLOCK);
 
 /**
  * Calculate hash for a block
@@ -49,7 +67,9 @@ export function calculateBlockHash(block: Omit<VoteBlock, 'hash'>): string {
   const data = 
     block.index +
     block.timestamp +
-    JSON.stringify(block.voteData) +
+    block.electionId +
+    block.voteData.candidateId +
+    block.voteData.voterHash +
     block.previousHash +
     block.nonce;
   
@@ -75,8 +95,8 @@ export function createVoteBlock(
   const newBlock: Omit<VoteBlock, 'hash'> = {
     index: previousBlock.index + 1,
     timestamp: Date.now(),
+    electionId: electionId,
     voteData: {
-      electionId,
       candidateId,
       voterHash: hashVoterId(voterId),
     },
@@ -150,21 +170,24 @@ export function isValidBlock(block: VoteBlock, previousBlock: VoteBlock): boolea
 }
 
 /**
- * Validate entire blockchain
+ * Validate entire blockchain for a specific election
  */
-export function isValidChain(chain: VoteBlock[]): boolean {
+export function isValidChain(chain: VoteBlock[], electionId?: string): boolean {
   // Check if chain has genesis block
   if (chain.length === 0) {
     return false;
   }
 
+  // If electionId is provided, ensure all blocks belong to this election
+  if (electionId && chain.some(block => block.electionId !== electionId)) {
+    console.error(`Chain contains blocks from different elections`);
+    return false;
+  }
+
   // Validate genesis block
-  if (
-    chain[0].index !== GENESIS_BLOCK.index ||
-    chain[0].previousHash !== GENESIS_BLOCK.previousHash ||
-    chain[0].hash !== GENESIS_BLOCK.hash
-  ) {
-    console.error('Invalid genesis block');
+  const firstBlock = chain[0];
+  if (firstBlock.index !== 0 || firstBlock.previousHash !== '0') {
+    console.error('Invalid genesis block structure');
     return false;
   }
 

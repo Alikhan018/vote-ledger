@@ -113,10 +113,10 @@ export async function GET(
     // Check blockchain
     try {
       const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
-      const consensusChain = await BlockchainDatabaseService.getConsensusBlockchain();
+      const consensusChain = await BlockchainDatabaseService.getConsensusBlockchain(electionId);
       
       const electionBlocks = consensusChain.filter(
-        block => block.index > 0 && block.voteData.electionId === electionId
+        block => block.index > 0 && block.electionId === electionId
       );
       
       debugInfo.sources.blockchain.totalVotes = electionBlocks.length;

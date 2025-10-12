@@ -18,6 +18,7 @@ import { COLLECTIONS, VoteBlock } from '@/config/firebase-init';
 import {
   VoteBlockchainService,
   GENESIS_BLOCK,
+  createGenesisBlock,
   getLastBlock,
   createVoteBlock,
   isValidChain,
@@ -26,7 +27,54 @@ import {
 
 export class BlockchainDatabaseService {
   /**
-   * Initialize blockchain for a new user
+   * Initialize blockchain for a new election
+   * This creates genesis blocks for all existing users
+   */
+  static async initializeElectionBlockchain(electionId: string): Promise<boolean> {
+    try {
+      console.log(`Initializing blockchain for election: ${electionId}`);
+      
+      // Get all users
+      const usersSnapshot = await getDocs(collection(db, COLLECTIONS.USERS));
+      
+      if (usersSnapshot.empty) {
+        console.log('No users found, election blockchain will be initialized when first user votes');
+        return true;
+      }
+
+      // Create genesis block for this election
+      const genesisBlock = createGenesisBlock(electionId);
+      const initialChain = [genesisBlock];
+
+      // Update all users with the new election blockchain
+      const batch = writeBatch(db);
+      let updatedUsers = 0;
+
+      usersSnapshot.docs.forEach(doc => {
+        const userData = doc.data();
+        const currentElectionBlocks = userData.electionBlocks || {};
+        
+        batch.update(doc.ref, {
+          electionBlocks: {
+            ...currentElectionBlocks,
+            [electionId]: initialChain,
+          },
+        });
+        updatedUsers++;
+      });
+
+      await batch.commit();
+      console.log(`Election blockchain initialized for ${updatedUsers} users for election ${electionId}`);
+
+      return true;
+    } catch (error) {
+      console.error('Initialize election blockchain error:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Initialize blockchain for a new user (initialize with all existing elections)
    */
   static async initializeUserBlockchain(userId: string): Promise<boolean> {
     try {
@@ -40,19 +88,26 @@ export class BlockchainDatabaseService {
 
       const userData = userDoc.data();
       
-      // If user already has blockchain, don't reinitialize
-      if (userData.voteBlocks && userData.voteBlocks.length > 0) {
+      // If user already has election blocks, don't reinitialize
+      if (userData.electionBlocks && Object.keys(userData.electionBlocks).length > 0) {
         return true;
       }
 
-      // Get the current blockchain from any existing user
-      const currentChain = await this.getConsensusBlockchain();
+      // Get all elections and initialize user with genesis blocks for each
+      const electionsSnapshot = await getDocs(collection(db, COLLECTIONS.ELECTIONS));
+      const electionBlocks: { [electionId: string]: VoteBlock[] } = {};
 
-      // Update user with current blockchain
-      await updateDoc(userRef, {
-        voteBlocks: currentChain,
+      electionsSnapshot.docs.forEach(electionDoc => {
+        const electionId = electionDoc.id;
+        electionBlocks[electionId] = [createGenesisBlock(electionId)];
       });
 
+      // Update user with election blocks
+      await updateDoc(userRef, {
+        electionBlocks: electionBlocks,
+      });
+
+      console.log(`Initialized blockchain for user ${userId} with ${Object.keys(electionBlocks).length} elections`);
       return true;
     } catch (error) {
       console.error('Initialize user blockchain error:', error);
@@ -61,33 +116,36 @@ export class BlockchainDatabaseService {
   }
 
   /**
-   * Get consensus blockchain (the most common chain among users)
+   * Get consensus blockchain for a specific election
    */
-  static async getConsensusBlockchain(): Promise<VoteBlock[]> {
+  static async getConsensusBlockchain(electionId: string): Promise<VoteBlock[]> {
     try {
-      console.log('Getting consensus blockchain...');
+      console.log(`Getting consensus blockchain for election: ${electionId}`);
       const usersSnapshot = await getDocs(collection(db, COLLECTIONS.USERS));
       
       if (usersSnapshot.empty) {
-        console.log('No users found, returning genesis block');
-        return [GENESIS_BLOCK];
+        console.log('No users found, returning genesis block for election');
+        return [createGenesisBlock(electionId)];
       }
 
       const chains: VoteBlock[][] = [];
       
       usersSnapshot.docs.forEach(doc => {
         const userData = doc.data();
-        if (userData.voteBlocks && Array.isArray(userData.voteBlocks)) {
-          console.log(`User ${doc.id} has ${userData.voteBlocks.length} blocks`);
-          chains.push(userData.voteBlocks);
+        if (userData.electionBlocks && userData.electionBlocks[electionId]) {
+          const electionChain = userData.electionBlocks[electionId];
+          if (Array.isArray(electionChain) && electionChain.length > 0) {
+            console.log(`User ${doc.id} has ${electionChain.length} blocks for election ${electionId}`);
+            chains.push(electionChain);
+          }
         } else {
-          console.log(`User ${doc.id} has no voteBlocks`);
+          console.log(`User ${doc.id} has no blocks for election ${electionId}`);
         }
       });
 
       if (chains.length === 0) {
-        console.log('No valid chains found, returning genesis block');
-        return [GENESIS_BLOCK];
+        console.log('No valid chains found, returning genesis block for election');
+        return [createGenesisBlock(electionId)];
       }
 
       // Find the most common chain (consensus)
@@ -141,16 +199,16 @@ export class BlockchainDatabaseService {
     try {
       console.log('Adding vote block to all users...');
 
-      // Get consensus blockchain
-      const currentChain = await this.getConsensusBlockchain();
+      // Get consensus blockchain for this specific election
+      const currentChain = await this.getConsensusBlockchain(electionId);
       
-      // Validate current chain
-      console.log('Validating current chain with', currentChain.length, 'blocks');
-      if (!isValidChain(currentChain)) {
-        console.error('Blockchain validation failed:', currentChain);
+      // Validate current chain for this election
+      console.log(`Validating current chain with ${currentChain.length} blocks for election ${electionId}`);
+      if (!isValidChain(currentChain, electionId)) {
+        console.error('Blockchain validation failed for election:', electionId, currentChain);
         return { 
           success: false, 
-          error: 'Current blockchain is invalid. System integrity compromised.' 
+          error: `Blockchain is invalid for election ${electionId}. System integrity compromised.` 
         };
       }
       
@@ -176,8 +234,15 @@ export class BlockchainDatabaseService {
 
       usersSnapshot.docs.forEach(userDoc => {
         const userRef = doc(db, COLLECTIONS.USERS, userDoc.id);
+        const userData = userDoc.data();
+        const currentElectionBlocks = userData.electionBlocks || {};
+        
         batch.update(userRef, {
-          voteBlocks: updatedChain,
+          electionBlocks: {
+            ...currentElectionBlocks,
+            [electionId]: updatedChain,
+          },
+          lastBlockchainUpdate: new Date(),
         });
         updateCount++;
       });
@@ -246,7 +311,9 @@ export class BlockchainDatabaseService {
         };
       }
 
-      const consensusChain = await this.getConsensusBlockchain();
+      // For now, use a placeholder election ID for global integrity check
+      // TODO: Update this function to work with election-specific chains
+      const consensusChain = await this.getConsensusBlockchain('global-integrity-check');
       const consensusHash = this.getChainHash(consensusChain);
 
       let matchCount = 0;
@@ -297,17 +364,27 @@ export class BlockchainDatabaseService {
   }
 
   /**
-   * Repair user's blockchain (sync with consensus)
+   * Repair user's blockchain (sync with consensus for all elections)
    */
   static async repairUserBlockchain(userId: string): Promise<boolean> {
     try {
-      const consensusChain = await this.getConsensusBlockchain();
       const userRef = doc(db, COLLECTIONS.USERS, userId);
+      
+      // Get all elections and sync user with consensus for each
+      const electionsSnapshot = await getDocs(collection(db, COLLECTIONS.ELECTIONS));
+      const electionBlocks: { [electionId: string]: VoteBlock[] } = {};
+
+      for (const electionDoc of electionsSnapshot.docs) {
+        const electionId = electionDoc.id;
+        const consensusChain = await this.getConsensusBlockchain(electionId);
+        electionBlocks[electionId] = consensusChain;
+      }
 
       await updateDoc(userRef, {
-        voteBlocks: consensusChain,
+        electionBlocks: electionBlocks,
       });
 
+      console.log(`Repaired blockchain for user ${userId} across ${Object.keys(electionBlocks).length} elections`);
       return true;
     } catch (error) {
       console.error('Repair user blockchain error:', error);
@@ -325,7 +402,17 @@ export class BlockchainDatabaseService {
     matchPercentage: number;
   }> {
     try {
-      const consensusChain = await this.getConsensusBlockchain();
+      // Get statistics across all elections
+      const electionsSnapshot = await getDocs(collection(db, COLLECTIONS.ELECTIONS));
+      let totalBlocks = 0;
+      let totalVotes = 0;
+
+      for (const electionDoc of electionsSnapshot.docs) {
+        const electionId = electionDoc.id;
+        const consensusChain = await this.getConsensusBlockchain(electionId);
+        totalBlocks += consensusChain.length;
+        totalVotes += Math.max(0, consensusChain.length - 1); // Subtract genesis block
+      }
       const integrity = await this.verifyBlockchainIntegrity();
 
       let integrityStatus: 'safe' | 'warning' | 'critical' = 'safe';
@@ -338,8 +425,8 @@ export class BlockchainDatabaseService {
       }
 
       return {
-        totalBlocks: consensusChain.length,
-        totalVotes: consensusChain.length - 1, // Exclude genesis
+        totalBlocks,
+        totalVotes,
         integrityStatus,
         matchPercentage: integrity.matchPercentage,
       };

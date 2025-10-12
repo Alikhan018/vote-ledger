@@ -19,15 +19,16 @@ export interface VoteLedgerUser {
   isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
-  voteBlocks?: VoteBlock[]; // Distributed ledger - each user stores all vote blocks
+  voteBlocks?: VoteBlock[]; // Legacy - will be removed
+  electionBlocks?: { [electionId: string]: VoteBlock[] }; // New: election-specific blockchains
 }
 
-// Vote block for blockchain
+// Vote block for blockchain (election-specific)
 export interface VoteBlock {
   index: number;
   timestamp: number;
+  electionId: string; // Election ID is part of the block structure
   voteData: {
-    electionId: string;
     candidateId: string;
     voterHash: string;
   };

@@ -159,6 +159,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Initialize blockchain for this election
+    console.log('Initializing blockchain for new election...');
+    const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
+    await BlockchainDatabaseService.initializeElectionBlockchain(electionId);
+
     // Update election statistics
     console.log('Updating election statistics...');
     await DatabaseService.updateElectionStats(electionId);

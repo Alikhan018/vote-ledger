@@ -18,10 +18,8 @@ export async function POST(req: NextRequest) {
       displayName: name,
     });
 
-    // Get consensus blockchain for new user
-    const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
-    const consensusChain = await BlockchainDatabaseService.getConsensusBlockchain();
-
+    // Initialize user with empty election blocks structure
+    // Election-specific blockchains will be created when elections are created
     const userProfile: VoteLedgerUser = {
       uid: userRecord.uid,
       name,
@@ -30,7 +28,7 @@ export async function POST(req: NextRequest) {
       isAdmin: false,
       createdAt: new Date(),
       updatedAt: new Date(),
-      voteBlocks: consensusChain, // Initialize with current blockchain
+      electionBlocks: {}, // Initialize with empty election blocks
     };
 
     await adminDb.collection(COLLECTIONS.USERS).doc(userRecord.uid).set({

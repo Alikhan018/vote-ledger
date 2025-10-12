@@ -21,6 +21,7 @@ import {
   Election, 
   Vote, 
   VoteCount,
+  VoteBlock,
   COLLECTIONS 
 } from '@/config/firebase-init';
 
@@ -444,15 +445,15 @@ export class DatabaseService {
     candidateResults: { candidateId: string; votes: number }[];
   }> {
     try {
-      // Get consensus blockchain
+      // Get consensus blockchain for this election
       const { BlockchainDatabaseService } = await import('@/lib/blockchain-database');
-      const consensusChain = await BlockchainDatabaseService.getConsensusBlockchain();
+      const consensusChain = await BlockchainDatabaseService.getConsensusBlockchain(electionId);
       
       // Count votes from blockchain
       const voteMap = new Map<string, number>();
       
       consensusChain.forEach(block => {
-        if (block.index > 0 && block.voteData.electionId === electionId) {
+        if (block.index > 0 && block.electionId === electionId) {
           const candidateId = block.voteData.candidateId;
           voteMap.set(candidateId, (voteMap.get(candidateId) || 0) + 1);
         }
