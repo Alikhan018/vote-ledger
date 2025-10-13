@@ -413,6 +413,13 @@ export default function Results() {
                         </div>
                         <p className="text-3xl font-bold gradient-text">{currentElection.totalVotes.toLocaleString()}</p>
                       </div>
+                        <div className="text-center">
+                          <div className="flex items-center justify-center mb-3">
+                            <Clock className="h-6 w-6 text-blue-400 mr-3" />
+                            <span className="text-lg font-medium text-gray-400">Status</span>
+                          </div>
+                          <p className={`text-2xl font-bold ${currentElection.status === 'ended' ? 'text-green-400' : 'text-blue-400'}`}>{currentElection.status === 'ended' ? 'Ended' : 'Active'}</p>
+                        </div>
                       <div className="text-center">
                         <div className="flex items-center justify-center mb-3">
                           <Award className="h-6 w-6 text-green-400 mr-3" />
@@ -461,6 +468,39 @@ export default function Results() {
                         <div className="flex items-center justify-center space-x-8 text-lg text-gray-300">
                           <span><strong className="text-blockchain-accent">{currentElection.results[0].votes.toLocaleString()}</strong> votes</span>
                           <span><strong className="text-blockchain-accent">{currentElection.results[0].percentage}%</strong> of total votes</span>
+                        </div>
+                        {/* Display 2nd and 3rd position candidates if available */}
+                        <div className="mt-10">
+                          <h3 className="text-xl font-semibold text-white mb-4">2nd & 3rd Position</h3>
+                          <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {currentElection.results.slice(1, 3).map((candidate, idx) => (
+                              <li key={candidate.candidateId} className="flex items-center space-x-4 bg-dark-secondary/50 p-4 rounded-lg">
+                                <span className="text-3xl">{candidate.symbol}</span>
+                                <div>
+                                  <span className="font-bold text-white">{candidate.name}</span>
+                                  <span className="block text-gray-400 text-sm">{candidate.party}</span>
+                                  <span className="block text-gray-400 text-xs">Position: {idx + 2}</span>
+                                </div>
+                                <span className="ml-auto font-semibold text-blockchain-accent">{candidate.votes} votes ({candidate.percentage}%)</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        {/* Show all candidates with at least 1 vote */}
+                        <div className="mt-10">
+                          <h3 className="text-xl font-semibold text-white mb-4">All Candidates with Votes</h3>
+                          <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {currentElection.results.filter(candidate => candidate.votes > 0).map((candidate) => (
+                              <li key={candidate.candidateId} className="flex items-center space-x-4 bg-dark-secondary/50 p-4 rounded-lg">
+                                <span className="text-3xl">{candidate.symbol}</span>
+                                <div>
+                                  <span className="font-bold text-white">{candidate.name}</span>
+                                  <span className="block text-gray-400 text-sm">{candidate.party}</span>
+                                </div>
+                                <span className="ml-auto font-semibold text-blockchain-accent">{candidate.votes} votes ({candidate.percentage}%)</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       </div>
                     </CardContent>
