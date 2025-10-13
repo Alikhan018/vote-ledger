@@ -369,6 +369,69 @@ export default function AdminPanel() {
     }
   };
 
+  // Force close all active elections (for testing)
+  const handleForceCloseAll = async () => {
+    try {
+      setRefreshLoading(true);
+      
+      const token = localStorage.getItem('idToken');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      if (!window.confirm('Are you sure you want to force close all active elections? This action cannot be undone.')) {
+        return;
+      }
+
+      toast({
+        title: 'Force Closing Elections',
+        description: 'Closing all active elections...',
+        className: 'bg-orange-500/10 border-orange-500/50',
+      });
+
+      const response = await fetch('/api/admin/elections/force-close-all', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: 'Elections Closed',
+          description: `Successfully closed ${data.closedCount} active elections`,
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+        
+        // Reload elections to show updated status
+        await loadElections(false);
+        await loadAdminStats();
+      } else {
+        toast({
+          title: 'Force Close Failed',
+          description: data.error || 'Failed to force close elections',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Error force closing elections:', error);
+      toast({
+        title: 'Force Close Error',
+        description: 'Failed to force close elections',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshLoading(false);
+    }
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (!userData) {
@@ -661,7 +724,7 @@ useEffect(() => {
     const timeUntilStart = startDate.getTime() - now.getTime();
     const timeUntilEnd = endDate.getTime() - now.getTime();
     
-    return {
+    const timing = {
       startDate,
       endDate,
       timeUntilStart,
@@ -676,6 +739,22 @@ useEffect(() => {
       isActive: now >= startDate && now < endDate,
       isEnded: now >= endDate
     };
+
+    // Debug logging for timing calculations
+    console.log(`⏰ Timing for ${election.title}:`, {
+      status: election.status,
+      now: now.toISOString(),
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      timeUntilStart: timeUntilStart,
+      timeUntilEnd: timeUntilEnd,
+      shouldAutoStart: timing.shouldAutoStart,
+      shouldAutoEnd: timing.shouldAutoEnd,
+      canStart: timing.canStart,
+      canEnd: timing.canEnd
+    });
+
+    return timing;
   };
 
   // Format time remaining
@@ -1629,6 +1708,16 @@ useEffect(() => {
                       >
                         <Target className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
                         <span>Refresh Stats</span>
+                      </Button>
+                      <Button
+                        onClick={handleForceCloseAll}
+                        variant="outline"
+                        size="sm"
+                        disabled={refreshLoading}
+                        className="flex items-center space-x-2 text-red-600 border-red-300 hover:bg-red-50"
+                      >
+                        <Square className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
+                        <span>Force Close All</span>
                       </Button>
                     </div>
                   </div>

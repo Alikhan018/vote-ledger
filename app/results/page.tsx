@@ -66,20 +66,37 @@ export default function Results() {
         // Get all elections to find the most recent one
         const elections = await DatabaseService.getElections();
         
+        console.log('📊 Results Page - All elections:', elections.map(e => ({
+          id: e.id,
+          title: e.title,
+          status: e.status,
+          createdAt: e.createdAt
+        })));
+        
         if (elections.length === 0) {
+          console.log('📊 Results Page - No elections found');
           setIsLoading(false);
           return;
         }
 
-        // Get the most recent election (active or ended)
-        const recentElection = elections.sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        )[0];
+        // Get the most recent ended election, or if none, get the most recent election
+        const endedElections = elections.filter(e => e.status === 'ended');
+        const recentElection = endedElections.length > 0 
+          ? endedElections.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
+          : elections.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+        console.log('📊 Results Page - Selected election:', {
+          title: recentElection.title,
+          status: recentElection.status,
+          id: recentElection.id,
+          isEnded: recentElection.status === 'ended'
+        });
 
         setElectionTitle(recentElection.title);
         setElectionClosed(recentElection.status === 'ended');
 
         if (recentElection.status !== 'ended') {
+          console.log('📊 Results Page - Election not ended, status:', recentElection.status);
           setIsLoading(false);
           return;
         }
@@ -89,6 +106,8 @@ export default function Results() {
         
         // Get vote statistics using the improved method
         const voteStats = await DatabaseService.getVoteStatistics(recentElection.id!);
+        
+        console.log('📊 Results Page - Vote statistics:', voteStats);
         
         // Calculate total votes
         const total = voteStats.totalVotes;
@@ -110,10 +129,13 @@ export default function Results() {
           };
         }).sort((a, b) => b.votes - a.votes);
 
+        console.log('📊 Results Page - Built results:', electionResults);
+
         setResults(electionResults);
         
         if (electionResults.length > 0) {
           setWinner(electionResults[0]);
+          console.log('📊 Results Page - Winner set:', electionResults[0]);
         }
 
         // Verify blockchain integrity
