@@ -273,6 +273,43 @@ export default function AdminPanel() {
     }
   };
 
+  // Comprehensive refresh function that reloads all data
+  const handleRefreshAll = async () => {
+    try {
+      setRefreshLoading(true);
+      
+      toast({
+        title: 'Refreshing Data',
+        description: 'Reloading all election and system data...',
+        className: 'bg-blue-500/10 border-blue-500/50',
+      });
+
+      // Load all data in parallel for better performance
+      await Promise.all([
+        loadElections(false),
+        loadCandidates(),
+        loadAdminStats(),
+        loadBlockchainStats()
+      ]);
+
+      toast({
+        title: 'Refresh Complete',
+        description: 'All data has been successfully refreshed',
+        className: 'bg-green-500/10 border-green-500/50',
+      });
+      
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast({
+        title: 'Refresh Error',
+        description: 'Some data may not have refreshed properly',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshLoading(false);
+    }
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (!userData) {
@@ -605,6 +642,15 @@ useEffect(() => {
         });
         return;
       }
+    } else if (action === 'delete') {
+      if (election.status !== 'upcoming') {
+        toast({
+          title: 'Cannot Delete Election',
+          description: `Cannot delete election. Election is currently ${election.status}. Only upcoming elections can be deleted.`,
+          variant: 'destructive',
+        });
+        return;
+      }
     }
 
     setActionLoading(prev => ({ ...prev, [electionId]: action }));
@@ -695,6 +741,16 @@ useEffect(() => {
 
   // Handle edit election
   const handleEditElection = (election: AdminElection) => {
+    // Check if election can be edited
+    if (election.status !== 'upcoming') {
+      toast({
+        title: 'Cannot Edit Election',
+        description: `Cannot edit election. Election is currently ${election.status}. Only upcoming elections can be edited.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setEditingElection(election);
     setNewElection({
       title: election.title,
@@ -960,98 +1016,6 @@ useEffect(() => {
     }
   };
 
-  // Debug election votes
-  const debugElectionVotes = async (electionId: string) => {
-    try {
-      const token = localStorage.getItem('idToken');
-      if (!token) {
-        toast({
-          title: 'Error',
-          description: 'No authentication token found',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const response = await fetch(`/api/debug/votes/${electionId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        console.log('Debug Info:', data.debugInfo);
-        toast({
-          title: 'Debug Info Retrieved',
-          description: `Check console for details. Votes: ${data.debugInfo.sources.votesCollection.totalVotes}, VoteCounts: ${data.debugInfo.sources.voteCountsCollection.totalVotes}, Blockchain: ${data.debugInfo.sources.blockchain.totalVotes}`,
-          className: 'bg-blue-500/10 border-blue-500/50',
-        });
-      } else {
-        toast({
-          title: 'Debug Error',
-          description: data.error || 'Failed to get debug info',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Debug error:', error);
-      toast({
-        title: 'Debug Error',
-        description: 'Failed to debug votes',
-        variant: 'destructive',
-      });
-    }
-  };
-
-  // Repair blockchain
-  const repairBlockchain = async () => {
-    try {
-      const token = localStorage.getItem('idToken');
-      if (!token) {
-        toast({
-          title: 'Error',
-          description: 'No authentication token found',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const response = await fetch('/api/admin/blockchain/repair', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        toast({
-          title: 'Blockchain Repaired',
-          description: `${data.repairedUsers} users were updated. Total users: ${data.totalUsers}`,
-          className: 'bg-green-500/10 border-green-500/50',
-        });
-        
-        // Reload blockchain stats
-        await loadBlockchainStats();
-      } else {
-        toast({
-          title: 'Repair Failed',
-          description: data.error || 'Failed to repair blockchain',
-          variant: 'destructive',
-        });
-      }
-    } catch (error) {
-      console.error('Repair blockchain error:', error);
-      toast({
-        title: 'Repair Error',
-        description: 'Failed to repair blockchain',
-        variant: 'destructive',
-      });
-    }
-  };
 
   if (isLoading) {
     return (
@@ -1120,14 +1084,14 @@ useEffect(() => {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-2xl font-bold text-gray-900">Overview Statistics</h2>
                 <Button
-                  onClick={() => loadAdminStats(true)}
+                  onClick={handleRefreshAll}
                   variant="outline"
                   size="sm"
-                  disabled={statsLoading}
+                  disabled={statsLoading || refreshLoading}
                   className="flex items-center space-x-2"
                 >
-                  <RefreshCw className={`h-4 w-4 ${statsLoading ? 'animate-spin' : ''}`} />
-                  <span>{statsLoading ? 'Refreshing...' : 'Refresh Stats'}</span>
+                  <RefreshCw className={`h-4 w-4 ${(statsLoading || refreshLoading) ? 'animate-spin' : ''}`} />
+                  <span>{(statsLoading || refreshLoading) ? 'Refreshing...' : 'Refresh Stats'}</span>
                 </Button>
               </div>
 
@@ -1553,34 +1517,14 @@ useEffect(() => {
                     </CardTitle>
                     <div className="flex space-x-2">
                       <Button
-                        onClick={() => loadElections(true)}
+                        onClick={handleRefreshAll}
                         variant="outline"
                         size="sm"
                         disabled={refreshLoading}
                         className="flex items-center space-x-2"
                       >
                         <RefreshCw className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
-                        <span>{refreshLoading ? 'Refreshing...' : 'Refresh'}</span>
-                      </Button>
-                      {activeElection && (
-                        <Button
-                          onClick={() => debugElectionVotes(activeElection.id)}
-                          variant="outline"
-                          size="sm"
-                          className="flex items-center space-x-2"
-                        >
-                          <Activity className="h-4 w-4" />
-                          <span>Debug Votes</span>
-                        </Button>
-                      )}
-                      <Button
-                        onClick={repairBlockchain}
-                        variant="outline"
-                        size="sm"
-                        className="flex items-center space-x-2 text-orange-600 hover:text-orange-700 border-orange-300 hover:border-orange-400"
-                      >
-                        <RefreshCw className="h-4 w-4" />
-                        <span>Repair Blockchain</span>
+                        <span>{refreshLoading ? 'Refreshing...' : 'Refresh All'}</span>
                       </Button>
                     </div>
                   </div>
@@ -1746,31 +1690,49 @@ useEffect(() => {
                                Deploy Results
                              </Button>
 
-                             <Button
-                               onClick={() => handleEditElection(election)}
-                               disabled={!!actionLoading[election.id!]}
-                               size="sm"
-                               variant="outline"
-                               className="border-blue-500 text-blue-600 hover:bg-blue-50 hover:border-blue-600 transition-all duration-200"
-                             >
-                               <Edit className="h-4 w-4 mr-1" />
-                               Edit
-                             </Button>
+                             {/* Only show edit/delete buttons for upcoming elections */}
+                             {election.status === 'upcoming' && (
+                               <>
+                                 <Button
+                                   onClick={() => handleEditElection(election)}
+                                   disabled={!!actionLoading[election.id!]}
+                                   size="sm"
+                                   variant="outline"
+                                   className="border-blue-500 text-blue-600 hover:bg-blue-50 hover:border-blue-600 transition-all duration-200"
+                                 >
+                                   <Edit className="h-4 w-4 mr-1" />
+                                   Edit
+                                 </Button>
 
-                             <Button
-                               onClick={() => handleElectionAction(election.id!, 'delete')}
-                               disabled={!!actionLoading[election.id!]}
-                               size="sm"
-                               variant="destructive"
-                               className="bg-red-600 hover:bg-red-700 transition-all duration-200"
-                             >
-                               {actionLoading[election.id!] === 'delete' ? (
-                                 <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                               ) : (
-                                 <Trash2 className="h-4 w-4 mr-1" />
-                               )}
-                               Delete
-                             </Button>
+                                 <Button
+                                   onClick={() => handleElectionAction(election.id!, 'delete')}
+                                   disabled={!!actionLoading[election.id!]}
+                                   size="sm"
+                                   variant="destructive"
+                                   className="bg-red-600 hover:bg-red-700 transition-all duration-200"
+                                 >
+                                   {actionLoading[election.id!] === 'delete' ? (
+                                     <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                   ) : (
+                                     <Trash2 className="h-4 w-4 mr-1" />
+                                   )}
+                                   Delete
+                                 </Button>
+                               </>
+                             )}
+
+                             {/* Show status message for active/ended elections */}
+                             {(election.status === 'active' || election.status === 'ended') && (
+                               <div className="flex items-center space-x-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-md border border-amber-200">
+                                 <AlertCircle className="h-4 w-4" />
+                                 <span className="font-medium">
+                                   {election.status === 'active' 
+                                     ? 'Election is active - editing disabled' 
+                                     : 'Election has ended - editing disabled'
+                                   }
+                                 </span>
+                               </div>
+                             )}
                            </div>
                         </div>
                         );

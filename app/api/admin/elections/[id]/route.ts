@@ -120,6 +120,28 @@ export async function PUT(
       );
     }
 
+    // Check if election exists and get its current status
+    const elections = await DatabaseService.getElections();
+    const existingElection = elections.find(e => e.id === id);
+    
+    if (!existingElection) {
+      return NextResponse.json(
+        { success: false, error: 'Election not found' },
+        { status: 404 }
+      );
+    }
+
+    // Prevent editing if election is active or ended
+    if (existingElection.status === 'active' || existingElection.status === 'ended') {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Cannot edit election. Election is currently ${existingElection.status}. Only upcoming elections can be edited.` 
+        },
+        { status: 403 }
+      );
+    }
+
     // Convert dates
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -224,6 +246,28 @@ export async function DELETE(
     const { id } = params;
 
     console.log('Deleting election:', id);
+
+    // Check if election exists and get its current status
+    const elections = await DatabaseService.getElections();
+    const existingElection = elections.find(e => e.id === id);
+    
+    if (!existingElection) {
+      return NextResponse.json(
+        { success: false, error: 'Election not found' },
+        { status: 404 }
+      );
+    }
+
+    // Prevent deletion if election is active or ended
+    if (existingElection.status === 'active' || existingElection.status === 'ended') {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Cannot delete election. Election is currently ${existingElection.status}. Only upcoming elections can be deleted.` 
+        },
+        { status: 403 }
+      );
+    }
 
     // Delete the election
     const success = await DatabaseService.deleteElection(id);
