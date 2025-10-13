@@ -427,11 +427,22 @@ export default function AdminPanel() {
 
       for (const election of elections) {
         const timing = getElectionTiming(election);
+        
+        // Debug logging
+        console.log(`Election ${election.title} (${election.status}):`, {
+          shouldAutoStart: timing.shouldAutoStart,
+          shouldAutoEnd: timing.shouldAutoEnd,
+          canStart: timing.canStart,
+          canEnd: timing.canEnd,
+          timeUntilStart: timing.timeUntilStart,
+          timeUntilEnd: timing.timeUntilEnd
+        });
 
         // Auto-start election if scheduled start time has passed and status is upcoming
         if (timing.shouldAutoStart) {
-          console.log('Auto-starting election:', election.title);
+          console.log('🚀 Auto-starting election:', election.title);
           const response = await AdminElectionsService.updateElectionStatus(election.id!, 'active');
+          console.log('Auto-start response:', response);
           if (response.success) {
             hasChanges = true;
             toast({
@@ -439,13 +450,21 @@ export default function AdminPanel() {
               description: `${election.title} has been automatically started`,
               className: 'bg-green-500/10 border-green-500/50',
             });
+          } else {
+            console.error('Auto-start failed:', response.error);
+            toast({
+              title: 'Auto-Start Failed',
+              description: response.error || 'Failed to auto-start election',
+              variant: 'destructive',
+            });
           }
         }
 
         // Auto-end election if scheduled end time has passed and status is active
         if (timing.shouldAutoEnd) {
-          console.log('Auto-ending election:', election.title);
+          console.log('⏰ Auto-ending election:', election.title);
           const response = await AdminElectionsService.updateElectionStatus(election.id!, 'ended');
+          console.log('Auto-end response:', response);
           if (response.success) {
             hasChanges = true;
             toast({
@@ -453,12 +472,20 @@ export default function AdminPanel() {
               description: `${election.title} has been automatically closed`,
               className: 'bg-blue-500/10 border-blue-500/50',
             });
+          } else {
+            console.error('Auto-end failed:', response.error);
+            toast({
+              title: 'Auto-End Failed',
+              description: response.error || 'Failed to auto-end election',
+              variant: 'destructive',
+            });
           }
         }
       }
 
       // Reload elections if any changes were made
       if (hasChanges) {
+        console.log('🔄 Reloading elections due to status changes');
         await loadElections();
       }
     } catch (error) {
@@ -716,9 +743,12 @@ useEffect(() => {
     
     try {
       if (action === 'activate') {
-        console.log('Activating election:', electionId);
+        console.log('🚀 Activating election:', electionId);
+        console.log('Current election status:', election.status);
         const response = await AdminElectionsService.updateElectionStatus(electionId, 'active');
+        console.log('Activate election response:', response);
         if (response.success) {
+          console.log('✅ Election activated successfully, reloading...');
           await loadElections();
           toast({
             title: 'Success!',
@@ -726,6 +756,7 @@ useEffect(() => {
             className: 'bg-green-500/10 border-green-500/50',
           });
         } else {
+          console.error('❌ Failed to activate election:', response.error);
           toast({
             title: 'Error',
             description: response.error || 'Failed to activate election',
@@ -733,9 +764,12 @@ useEffect(() => {
           });
         }
       } else if (action === 'close') {
-        console.log('Closing election:', electionId);
+        console.log('🔴 Closing election:', electionId);
+        console.log('Current election status:', election.status);
         const response = await AdminElectionsService.updateElectionStatus(electionId, 'ended');
+        console.log('Close election response:', response);
         if (response.success) {
+          console.log('✅ Election closed successfully, reloading...');
           await loadElections();
           toast({
             title: 'Success!',
@@ -743,6 +777,7 @@ useEffect(() => {
             className: 'bg-green-500/10 border-green-500/50',
           });
         } else {
+          console.error('❌ Failed to close election:', response.error);
           toast({
             title: 'Error',
             description: response.error || 'Failed to close election',
@@ -1631,9 +1666,19 @@ useEffect(() => {
                                      Starts in {formatTimeRemaining(timing.timeUntilStart)}
                                    </Badge>
                                  )}
+                                 {election.status === 'upcoming' && timing.shouldAutoStart && (
+                                   <Badge className="bg-green-100 text-green-800 border-green-200 animate-pulse">
+                                     🚀 Auto-starting now
+                                   </Badge>
+                                 )}
                                  {election.status === 'active' && timing.timeUntilEnd > 0 && (
                                    <Badge className="bg-orange-100 text-orange-800 border-orange-200">
                                      Ends in {formatTimeRemaining(timing.timeUntilEnd)}
+                                   </Badge>
+                                 )}
+                                 {election.status === 'active' && timing.shouldAutoEnd && (
+                                   <Badge className="bg-red-100 text-red-800 border-red-200 animate-pulse">
+                                     ⏰ Auto-ending now
                                    </Badge>
                                  )}
                                  {election.status === 'active' && timing.timeUntilEnd <= 0 && (
@@ -1715,6 +1760,13 @@ useEffect(() => {
                           </div>
                           
                            <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
+                             {/* Debug info */}
+                             {process.env.NODE_ENV === 'development' && (
+                               <div className="text-xs text-gray-500 mb-2 w-full">
+                                 Debug: Status={election.status}, canStart={timing.canStart ? 'true' : 'false'}, canEnd={timing.canEnd ? 'true' : 'false'}
+                               </div>
+                             )}
+                             
                              <Button
                                onClick={() => handleElectionAction(election.id!, 'activate')}
                                disabled={!timing.canStart || !!actionLoading[election.id!]}
@@ -1744,20 +1796,23 @@ useEffect(() => {
                                Close
                              </Button>
                              
-                             <Button
-                               onClick={() => handleElectionAction(election.id!, 'deploy')}
-                               disabled={!timing.canDeploy || !!actionLoading[election.id!]}
-                               size="sm"
-                               variant="outline"
-                               className="transition-all duration-200"
-                             >
-                               {actionLoading[election.id!] === 'deploy' ? (
-                                 <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                               ) : (
-                                 <Upload className="h-4 w-4 mr-1" />
-                               )}
-                               Deploy Results
-                             </Button>
+                             {/* Only show deploy button for ended elections */}
+                             {election.status === 'ended' && (
+                               <Button
+                                 onClick={() => handleElectionAction(election.id!, 'deploy')}
+                                 disabled={!!actionLoading[election.id!]}
+                                 size="sm"
+                                 variant="outline"
+                                 className="border-green-500 text-green-600 hover:bg-green-50 hover:border-green-600 transition-all duration-200"
+                               >
+                                 {actionLoading[election.id!] === 'deploy' ? (
+                                   <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                                 ) : (
+                                   <Upload className="h-4 w-4 mr-1" />
+                                 )}
+                                 Deploy Results
+                               </Button>
+                             )}
 
                              {/* Only show edit/delete buttons for upcoming elections */}
                              {election.status === 'upcoming' && (

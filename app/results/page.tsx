@@ -87,24 +87,24 @@ export default function Results() {
         // Get candidates
         const allCandidates = await DatabaseService.getCandidates();
         
-        // Get vote counts
-        const voteCounts = await DatabaseService.getVoteCounts(recentElection.id!);
+        // Get vote statistics using the improved method
+        const voteStats = await DatabaseService.getVoteStatistics(recentElection.id!);
         
         // Calculate total votes
-        const total = voteCounts.reduce((sum, vc) => sum + vc.count, 0);
+        const total = voteStats.totalVotes;
         setTotalVotes(total);
 
-        // Build results
-        const electionResults: ElectionResult[] = voteCounts.map(vc => {
-          const candidate = allCandidates.find(c => c.id === vc.candidateId);
-          const percentage = total > 0 ? (vc.count / total) * 100 : 0;
+        // Build results from the vote statistics
+        const electionResults: ElectionResult[] = voteStats.candidateResults.map(result => {
+          const candidate = allCandidates.find(c => c.id === result.candidateId);
+          const percentage = total > 0 ? (result.votes / total) * 100 : 0;
           
           return {
-            candidateId: vc.candidateId,
-            name: candidate?.name || 'Unknown',
+            candidateId: result.candidateId,
+            name: result.candidateName,
             party: candidate?.party || 'Unknown',
             symbol: candidate?.symbol || '❓',
-            votes: vc.count,
+            votes: result.votes,
             percentage: Math.round(percentage * 100) / 100,
             color: candidate?.color || 'gray',
           };
