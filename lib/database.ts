@@ -336,20 +336,45 @@ export class DatabaseService {
 
   static async getVoteCounts(electionId: string): Promise<VoteCount[]> {
     try {
-      const q = query(
-        collection(db, COLLECTIONS.VOTE_COUNTS),
-        where('electionId', '==', electionId),
-        orderBy('count', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
-      
-      return querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          lastUpdated: (data.lastUpdated as Timestamp)?.toDate(),
-        } as VoteCount;
-      });
+      // First try with orderBy, if it fails due to missing index, fall back to simple query
+      try {
+        const q = query(
+          collection(db, COLLECTIONS.VOTE_COUNTS),
+          where('electionId', '==', electionId),
+          orderBy('count', 'desc')
+        );
+        const querySnapshot = await getDocs(q);
+        
+        return querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            ...data,
+            lastUpdated: (data.lastUpdated as Timestamp)?.toDate(),
+          } as VoteCount;
+        });
+      } catch (indexError: any) {
+        // If index error, use simple query without orderBy
+        if (indexError.code === 'failed-precondition') {
+          console.log('Index not found, using simple query for vote counts');
+          const q = query(
+            collection(db, COLLECTIONS.VOTE_COUNTS),
+            where('electionId', '==', electionId)
+          );
+          const querySnapshot = await getDocs(q);
+          
+          const voteCounts = querySnapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+              ...data,
+              lastUpdated: (data.lastUpdated as Timestamp)?.toDate(),
+            } as VoteCount;
+          });
+          
+          // Sort manually by count in descending order
+          return voteCounts.sort((a, b) => b.count - a.count);
+        }
+        throw indexError;
+      }
     } catch (error) {
       console.error('Get vote counts error:', error);
       return [];
@@ -413,23 +438,43 @@ export class DatabaseService {
       
       const candidates = await this.getCandidates();
       
-      // Use voteCounts as primary source, blockchain as verification
-      const totalVotes = voteCounts.reduce((sum, count) => sum + count.count, 0);
+      // Use blockchain as primary source if voteCounts is empty or inconsistent
+      let totalVotes: number;
+      let candidateResults: { candidateId: string; candidateName: string; votes: number }[];
       
-      const candidateResults = voteCounts.map(count => {
-        const candidate = candidates.find(c => c.id === count.candidateId);
-        return {
-          candidateId: count.candidateId,
-          candidateName: candidate?.name || 'Unknown',
-          votes: count.count,
-        };
-      });
+      const voteCountsTotal = voteCounts.reduce((sum, count) => sum + count.count, 0);
+      
+      if (voteCountsTotal > 0 && Math.abs(voteCountsTotal - blockchainStats.totalVotes) <= 1) {
+        // Use voteCounts if it has data and is consistent with blockchain
+        totalVotes = voteCountsTotal;
+        candidateResults = voteCounts.map(count => {
+          const candidate = candidates.find(c => c.id === count.candidateId);
+          return {
+            candidateId: count.candidateId,
+            candidateName: candidate?.name || 'Unknown',
+            votes: count.count,
+          };
+        });
+      } else {
+        // Use blockchain data if voteCounts is empty or inconsistent
+        console.log('Using blockchain data for vote statistics');
+        totalVotes = blockchainStats.totalVotes;
+        candidateResults = blockchainStats.candidateResults.map(result => {
+          const candidate = candidates.find(c => c.id === result.candidateId);
+          return {
+            candidateId: result.candidateId,
+            candidateName: candidate?.name || 'Unknown',
+            votes: result.votes,
+          };
+        });
+      }
 
       console.log('Vote statistics:', { 
         totalVotes, 
         candidateResults,
+        voteCountsTotal,
         blockchainVotes: blockchainStats.totalVotes,
-        blockchainMatches: totalVotes === blockchainStats.totalVotes ? 'YES' : 'NO'
+        source: voteCountsTotal > 0 ? 'voteCounts' : 'blockchain'
       });
       
       return { totalVotes, candidateResults };
@@ -499,6 +544,26 @@ export class DatabaseService {
       return true;
     } catch (error) {
       console.error('Update election stats error:', error);
+      return false;
+    }
+  }
+
+  // Force refresh all election statistics (useful for admin operations)
+  static async refreshAllElectionStats(): Promise<boolean> {
+    try {
+      console.log('Refreshing all election statistics...');
+      const elections = await this.getElections();
+      
+      for (const election of elections) {
+        if (election.id) {
+          await this.updateElectionStats(election.id);
+        }
+      }
+      
+      console.log('All election statistics refreshed successfully');
+      return true;
+    } catch (error) {
+      console.error('Refresh all election stats error:', error);
       return false;
     }
   }

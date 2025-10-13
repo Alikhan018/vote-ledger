@@ -310,6 +310,65 @@ export default function AdminPanel() {
     }
   };
 
+  // Refresh election statistics specifically
+  const handleRefreshStats = async () => {
+    try {
+      setRefreshLoading(true);
+      
+      const token = localStorage.getItem('idToken');
+      if (!token) {
+        toast({
+          title: 'Error',
+          description: 'No authentication token found',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      toast({
+        title: 'Refreshing Statistics',
+        description: 'Recalculating vote counts and turnout...',
+        className: 'bg-blue-500/10 border-blue-500/50',
+      });
+
+      const response = await fetch('/api/admin/elections/refresh-stats', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        toast({
+          title: 'Statistics Refreshed',
+          description: 'Vote counts and turnout have been recalculated',
+          className: 'bg-green-500/10 border-green-500/50',
+        });
+        
+        // Reload elections to show updated stats
+        await loadElections(false);
+        await loadAdminStats();
+      } else {
+        toast({
+          title: 'Refresh Failed',
+          description: data.error || 'Failed to refresh statistics',
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing statistics:', error);
+      toast({
+        title: 'Refresh Error',
+        description: 'Failed to refresh statistics',
+        variant: 'destructive',
+      });
+    } finally {
+      setRefreshLoading(false);
+    }
+  };
+
   useEffect(() => {
     const userData = localStorage.getItem('user');
     if (!userData) {
@@ -1525,6 +1584,16 @@ useEffect(() => {
                       >
                         <RefreshCw className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
                         <span>{refreshLoading ? 'Refreshing...' : 'Refresh All'}</span>
+                      </Button>
+                      <Button
+                        onClick={handleRefreshStats}
+                        variant="outline"
+                        size="sm"
+                        disabled={refreshLoading}
+                        className="flex items-center space-x-2 text-green-600 border-green-300 hover:bg-green-50"
+                      >
+                        <Target className={`h-4 w-4 ${refreshLoading ? 'animate-spin' : ''}`} />
+                        <span>Refresh Stats</span>
                       </Button>
                     </div>
                   </div>
