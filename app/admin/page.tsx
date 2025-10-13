@@ -487,8 +487,14 @@ export default function AdminPanel() {
   const checkElectionTiming = async () => {
     try {
       let hasChanges = false;
+      const now = new Date();
 
       for (const election of elections) {
+        if (!election.id) {
+          console.warn('Election missing ID:', election.title);
+          continue;
+        }
+
         const timing = getElectionTiming(election);
         
         // Debug logging
@@ -498,26 +504,38 @@ export default function AdminPanel() {
           canStart: timing.canStart,
           canEnd: timing.canEnd,
           timeUntilStart: timing.timeUntilStart,
-          timeUntilEnd: timing.timeUntilEnd
+          timeUntilEnd: timing.timeUntilEnd,
+          currentTime: now.toISOString(),
+          startTime: timing.startDate.toISOString(),
+          endTime: timing.endDate.toISOString()
         });
 
         // Auto-start election if scheduled start time has passed and status is upcoming
         if (timing.shouldAutoStart) {
           console.log('🚀 Auto-starting election:', election.title);
-          const response = await AdminElectionsService.updateElectionStatus(election.id!, 'active');
-          console.log('Auto-start response:', response);
-          if (response.success) {
-            hasChanges = true;
+          try {
+            const response = await AdminElectionsService.updateElectionStatus(election.id, 'active');
+            console.log('Auto-start response:', response);
+            if (response.success) {
+              hasChanges = true;
+              toast({
+                title: 'Election Auto-Started',
+                description: `${election.title} has been automatically started`,
+                className: 'bg-green-500/10 border-green-500/50',
+              });
+            } else {
+              console.error('Auto-start failed:', response.error);
+              toast({
+                title: 'Auto-Start Failed',
+                description: response.error || 'Failed to auto-start election',
+                variant: 'destructive',
+              });
+            }
+          } catch (error) {
+            console.error('Auto-start error:', error);
             toast({
-              title: 'Election Auto-Started',
-              description: `${election.title} has been automatically started`,
-              className: 'bg-green-500/10 border-green-500/50',
-            });
-          } else {
-            console.error('Auto-start failed:', response.error);
-            toast({
-              title: 'Auto-Start Failed',
-              description: response.error || 'Failed to auto-start election',
+              title: 'Auto-Start Error',
+              description: 'An error occurred while auto-starting the election',
               variant: 'destructive',
             });
           }
@@ -526,20 +544,29 @@ export default function AdminPanel() {
         // Auto-end election if scheduled end time has passed and status is active
         if (timing.shouldAutoEnd) {
           console.log('⏰ Auto-ending election:', election.title);
-          const response = await AdminElectionsService.updateElectionStatus(election.id!, 'ended');
-          console.log('Auto-end response:', response);
-          if (response.success) {
-            hasChanges = true;
+          try {
+            const response = await AdminElectionsService.updateElectionStatus(election.id, 'ended');
+            console.log('Auto-end response:', response);
+            if (response.success) {
+              hasChanges = true;
+              toast({
+                title: 'Election Auto-Ended',
+                description: `${election.title} has been automatically closed`,
+                className: 'bg-blue-500/10 border-blue-500/50',
+              });
+            } else {
+              console.error('Auto-end failed:', response.error);
+              toast({
+                title: 'Auto-End Failed',
+                description: response.error || 'Failed to auto-end election',
+                variant: 'destructive',
+              });
+            }
+          } catch (error) {
+            console.error('Auto-end error:', error);
             toast({
-              title: 'Election Auto-Ended',
-              description: `${election.title} has been automatically closed`,
-              className: 'bg-blue-500/10 border-blue-500/50',
-            });
-          } else {
-            console.error('Auto-end failed:', response.error);
-            toast({
-              title: 'Auto-End Failed',
-              description: response.error || 'Failed to auto-end election',
+              title: 'Auto-End Error',
+              description: 'An error occurred while auto-ending the election',
               variant: 'destructive',
             });
           }
@@ -549,7 +576,12 @@ export default function AdminPanel() {
       // Reload elections if any changes were made
       if (hasChanges) {
         console.log('🔄 Reloading elections due to status changes');
-        await loadElections();
+        try {
+          await loadElections(false);
+          await loadAdminStats();
+        } catch (error) {
+          console.error('Error refreshing after auto-start/end:', error);
+        }
       }
     } catch (error) {
       console.error('Error checking election timing:', error);
@@ -717,9 +749,30 @@ useEffect(() => {
 
   // Get election timing info
   const getElectionTiming = (election: AdminElection) => {
-    const now = currentTime;
+    const now = new Date(); // Use current time instead of state to ensure accuracy
     const startDate = election.startDate instanceof Date ? election.startDate : new Date(election.startDate);
     const endDate = election.endDate instanceof Date ? election.endDate : new Date(election.endDate);
+    
+    // Ensure dates are valid
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      console.error('Invalid dates for election:', election.title, {
+        startDate: election.startDate,
+        endDate: election.endDate
+      });
+      return {
+        startDate,
+        endDate,
+        timeUntilStart: 0,
+        timeUntilEnd: 0,
+        canStart: election.status === 'upcoming',
+        canEnd: election.status === 'active',
+        canDeploy: election.status === 'ended',
+        shouldAutoStart: false,
+        shouldAutoEnd: false,
+        isActive: false,
+        isEnded: false
+      };
+    }
     
     const timeUntilStart = startDate.getTime() - now.getTime();
     const timeUntilEnd = endDate.getTime() - now.getTime();
@@ -751,7 +804,8 @@ useEffect(() => {
       shouldAutoStart: timing.shouldAutoStart,
       shouldAutoEnd: timing.shouldAutoEnd,
       canStart: timing.canStart,
-      canEnd: timing.canEnd
+      canEnd: timing.canEnd,
+      timeDiff: now.getTime() - startDate.getTime() // Show actual time difference
     });
 
     return timing;
@@ -1852,7 +1906,18 @@ useEffect(() => {
                              {/* Debug info */}
                              {process.env.NODE_ENV === 'development' && (
                                <div className="text-xs text-gray-500 mb-2 w-full">
-                                 Debug: Status={election.status}, canStart={timing.canStart ? 'true' : 'false'}, canEnd={timing.canEnd ? 'true' : 'false'}
+                                 Debug: Status={election.status}, canStart={timing.canStart ? 'true' : 'false'}, canEnd={timing.canEnd ? 'true' : 'false'}, shouldAutoStart={timing.shouldAutoStart ? 'true' : 'false'}
+                                 <br />
+                                 Start: {timing.startDate.toISOString()}, Now: {new Date().toISOString()}, Diff: {new Date().getTime() - timing.startDate.getTime()}ms
+                                 <br />
+                                 <Button
+                                   onClick={() => checkElectionTiming()}
+                                   size="sm"
+                                   variant="outline"
+                                   className="mt-1 text-xs"
+                                 >
+                                   🔄 Test Auto-Start Check
+                                 </Button>
                                </div>
                              )}
                              
