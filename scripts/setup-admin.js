@@ -3,7 +3,8 @@
 /**
  * Setup Admin User Script
  * 
- * This script creates an admin user using environment variables
+ * Creates ONE admin user from environment variables
+ * After admin is created, no more admins can be made
  * Run with: npm run setup-admin
  */
 
@@ -53,60 +54,113 @@ function getAdminConfig() {
   const name = process.env.ADMIN_NAME;
 
   if (!cnic || !email || !password || !name) {
-    console.log('⚠️  Admin credentials not found in environment variables');
-    console.log('   Set ADMIN_CNIC, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME in .env.local');
-    return null;
+    throw new Error('Missing required environment variables. Set ADMIN_CNIC, ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME in .env.local');
   }
 
   return { cnic, email, password, name };
 }
 
-// Check if admin user exists
-async function checkAdminExists(cnic) {
+// Check if admin already exists in the system
+async function checkAdminExists() {
   try {
     const db = admin.firestore();
-    const querySnapshot = await db
+    
+    // Check system config
+    const configDoc = await db.collection('system').doc('config').get();
+    if (configDoc.exists && configDoc.data().adminInitialized === true) {
+      return { exists: true, reason: 'Admin already initialized in system' };
+    }
+
+    // Check for any admin users
+    const adminQuery = await db
       .collection('users')
-      .where('cnic', '==', cnic)
+      .where('isAdmin', '==', true)
       .limit(1)
       .get();
 
-    if (!querySnapshot.empty) {
-      const doc = querySnapshot.docs[0];
-      return { uid: doc.id, ...doc.data() };
+    if (!adminQuery.empty) {
+      const adminUser = adminQuery.docs[0].data();
+      return { 
+        exists: true, 
+        reason: 'Admin user already exists',
+        user: adminUser
+      };
     }
 
-    return null;
+    return { exists: false };
   } catch (error) {
     console.error('Error checking admin existence:', error);
-    return null;
+    throw error;
+  }
+}
+
+// Check if user exists by email in Firebase Auth
+async function getUserByEmail(email) {
+  try {
+    const auth = admin.auth();
+    const userRecord = await auth.getUserByEmail(email);
+    return userRecord;
+  } catch (error) {
+    if (error.code === 'auth/user-not-found') {
+      return null;
+    }
+    throw error;
   }
 }
 
 // Create admin user in Firebase Auth and Firestore
-async function createAdminUser(config) {
+async function seedAdminUser(config) {
   try {
     const auth = admin.auth();
     const db = admin.firestore();
 
-    // Check if user already exists
-    const existingUser = await checkAdminExists(config.cnic);
-    if (existingUser) {
-      console.log('✅ Admin user already exists:', existingUser.email);
-      return { success: true, user: existingUser };
+    // Check if admin already exists
+    console.log('🔍 Checking if admin already exists...');
+    const adminCheck = await checkAdminExists();
+    
+    if (adminCheck.exists) {
+      console.log('⚠️  Admin already exists:', adminCheck.reason);
+      if (adminCheck.user) {
+        console.log('📧 Existing Admin Email:', adminCheck.user.email);
+        console.log('👤 Existing Admin Name:', adminCheck.user.name);
+      }
+      console.log('');
+      console.log('🚫 Cannot create another admin. Only ONE admin is allowed.');
+      console.log('💡 If you need to reset the admin, delete the existing admin user first.');
+      return { success: false, error: 'Admin already exists. Only one admin allowed.' };
     }
 
-    // Create Firebase Auth user
-    const userRecord = await auth.createUser({
-      email: config.email,
-      password: config.password,
-      displayName: config.name,
-    });
+    // Check if user with this email exists
+    let authUser = await getUserByEmail(config.email);
+    let userRecord;
 
-    console.log('✅ Created Firebase Auth user:', userRecord.uid);
+    if (authUser) {
+      console.log('✅ User exists in Firebase Auth, converting to admin...');
+      userRecord = authUser;
+      
+      // Delete any existing non-admin data
+      const existingDoc = await db.collection('users').doc(authUser.uid).get();
+      if (existingDoc.exists && existingDoc.data().isAdmin !== true) {
+        await db.collection('users').doc(authUser.uid).delete();
+        console.log('🗑️  Removed existing non-admin user data');
+      }
+    } else {
+      // Create new Firebase Auth user
+      console.log('🆕 Creating new admin user in Firebase Auth...');
+      userRecord = await auth.createUser({
+        email: config.email,
+        password: config.password,
+        displayName: config.name,
+      });
+      console.log('✅ Created Firebase Auth user:', userRecord.uid);
+    }
 
-    // Create user profile in Firestore
-    const userProfile = {
+    // Set custom claims for admin authorization
+    await auth.setCustomUserClaims(userRecord.uid, { isAdmin: true });
+    console.log('✅ Set admin custom claims in Firebase Auth');
+
+    // Create admin profile in Firestore
+    const adminProfile = {
       uid: userRecord.uid,
       name: config.name,
       cnic: config.cnic,
@@ -116,63 +170,104 @@ async function createAdminUser(config) {
       updatedAt: new Date(),
     };
 
-    await db.collection('users').doc(userRecord.uid).set(userProfile);
-
+    await db.collection('users').doc(userRecord.uid).set(adminProfile);
     console.log('✅ Created admin user profile in Firestore');
+
+    // Mark system as admin initialized (prevent future admin creation)
+    await db.collection('system').doc('config').set({
+      adminInitialized: true,
+      adminEmail: config.email,
+      adminCreatedAt: new Date(),
+      lastUpdatedAt: new Date(),
+    }, { merge: true });
+    console.log('✅ Marked system as admin-initialized');
+
     console.log('📧 Email:', config.email);
     console.log('🆔 CNIC:', config.cnic);
     console.log('👤 Name:', config.name);
 
-    return { success: true, user: userProfile };
+    return { success: true, user: adminProfile };
   } catch (error) {
-    console.error('❌ Error creating admin user:', error);
+    console.error('❌ Error seeding admin user:', error);
     return { success: false, error: error.message };
   }
 }
 
-// Setup admin user from environment variables
-async function setupAdminFromEnv() {
-  const config = getAdminConfig();
-  
-  if (!config) {
-    return { 
-      success: false, 
-      error: 'Admin configuration not found in environment variables' 
-    };
-  }
-
-  console.log('🔧 Setting up admin user from environment variables...');
-  return await createAdminUser(config);
-}
-
 // CLI function to setup admin
 async function setupAdminCLI() {
+  console.log('');
+  console.log('═══════════════════════════════════════');
   console.log('🚀 Vote Ledger Admin Setup');
-  console.log('========================');
+  console.log('═══════════════════════════════════════');
+  console.log('');
+  console.log('⚠️  IMPORTANT: Only ONE admin can be created');
+  console.log('   After setup, no more admins can be made');
+  console.log('');
   
   try {
     // Initialize Firebase Admin
     initAdmin();
     console.log('✅ Firebase Admin SDK initialized');
+    console.log('');
+
+    // Get admin config from environment
+    const config = getAdminConfig();
+    console.log('📋 Admin Configuration:');
+    console.log('   Email:', config.email);
+    console.log('   Name:', config.name);
+    console.log('   CNIC:', config.cnic);
+    console.log('');
     
-    const result = await setupAdminFromEnv();
+    // Seed the admin user
+    const result = await seedAdminUser(config);
     
     if (result.success && result.user) {
-      console.log('✅ Admin setup completed successfully!');
-      console.log('📧 Login with:', result.user.email);
-      console.log('🆔 CNIC:', result.user.cnic);
-    } else {
-      console.log('❌ Admin setup failed:', result.error);
       console.log('');
-      console.log('💡 Make sure you have these environment variables set:');
-      console.log('   ADMIN_CNIC=12345-1234567-1');
-      console.log('   ADMIN_EMAIL=admin@voteledger.com');
-      console.log('   ADMIN_PASSWORD=SecureAdmin123!');
-      console.log('   ADMIN_NAME=System Administrator');
+      console.log('═══════════════════════════════════════');
+      console.log('✅ Admin User Successfully Created!');
+      console.log('═══════════════════════════════════════');
+      console.log('');
+      console.log('📧 Email:', result.user.email);
+      console.log('🆔 CNIC:', result.user.cnic);
+      console.log('👤 Name:', result.user.name);
+      console.log('🔐 Admin Status: TRUE');
+      console.log('🔒 System Locked: No more admins can be created');
+      console.log('');
+      console.log('💡 Login at /signin with:');
+      console.log('   Email:', result.user.email);
+      console.log('   Password: (from your .env.local)');
+      console.log('');
+      console.log('═══════════════════════════════════════');
+      console.log('');
+    } else {
+      console.log('');
+      console.log('═══════════════════════════════════════');
+      console.log('❌ Admin Setup Failed');
+      console.log('═══════════════════════════════════════');
+      console.log('');
+      console.log('Error:', result.error);
+      console.log('');
+      if (result.error.includes('already exists')) {
+        console.log('💡 The system already has an admin user.');
+        console.log('   Only ONE admin is allowed per system.');
+      } else {
+        console.log('💡 Make sure your .env.local has:');
+        console.log('   ADMIN_CNIC=12345-1234567-1');
+        console.log('   ADMIN_EMAIL=admin@voteledger.com');
+        console.log('   ADMIN_PASSWORD=SecureAdmin123!');
+        console.log('   ADMIN_NAME=System Administrator');
+      }
+      console.log('');
       process.exit(1);
     }
   } catch (error) {
-    console.error('❌ Setup failed:', error.message);
+    console.error('');
+    console.error('═══════════════════════════════════════');
+    console.error('❌ Fatal Error');
+    console.error('═══════════════════════════════════════');
+    console.error('');
+    console.error('Error:', error.message);
+    console.error('');
     process.exit(1);
   }
 }

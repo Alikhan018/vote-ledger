@@ -45,6 +45,18 @@ const sampleElection = {
   updatedAt: new Date(),
 };
 
+// Test election for auto-start functionality (starts in the past)
+const testElection = {
+  title: 'Auto-Start Test Election',
+  description: 'Test election to verify auto-start functionality',
+  startDate: new Date(Date.now() - 60000), // Start 1 minute ago
+  endDate: new Date(Date.now() + 3600000), // End 1 hour from now
+  status: 'upcoming' as const,
+  candidates: [] as string[], // Will be populated with candidate IDs
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
 // Function to seed the database with sample data
 export const seedDatabase = async () => {
   try {
@@ -70,14 +82,27 @@ export const seedDatabase = async () => {
     if (electionId) {
       console.log(`✅ Created election: ${sampleElection.title}`);
     }
+
+    // Create test election for auto-start functionality
+    const testElectionData = {
+      ...testElection,
+      candidates: candidateIds.slice(0, 2), // Use first 2 candidates for test
+    };
+    
+    const testElectionId = await DatabaseService.createElection(testElectionData);
+    if (testElectionId) {
+      console.log(`✅ Created test election: ${testElection.title}`);
+      console.log(`⏰ Test election starts at: ${testElection.startDate.toISOString()}`);
+    }
     
     console.log('🎉 Database seeding completed successfully!');
-    console.log(`📊 Created ${candidateIds.length} candidates and 1 election`);
+    console.log(`📊 Created ${candidateIds.length} candidates and 2 elections`);
     
     return {
       success: true,
       candidates: candidateIds,
       election: electionId,
+      testElection: testElectionId,
     };
   } catch (error) {
     console.error('❌ Database seeding failed:', error);
@@ -130,6 +155,12 @@ export const createAdminUser = async (userData: {
     return { success: false, error };
   }
 };
+
+
+
+
+
+
 
 
 

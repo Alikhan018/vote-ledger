@@ -61,6 +61,25 @@ export type {
   DeployResultsRequest,
   GetElectionsResponse,
   ElectionResponse,
-  ElectionStatsResponse
+  ElectionStatsResponse,
+  AdminStatsResponse
 } from './admin-elections-service';
+
+export { VoteBlockchainService } from './vote-blockchain-service';
+export type {
+  VoteBlock
+} from './vote-blockchain-service';
+export {
+  GENESIS_BLOCK,
+  calculateBlockHash,
+  hashVoterId,
+  createVoteBlock,
+  isValidBlock,
+  isValidChain,
+  getLastBlock,
+  hasVotedInBlockchain,
+  getVoteCountsFromBlockchain,
+  compareChains,
+  findChainDifferences
+} from './vote-blockchain-service';
 

@@ -19,6 +19,22 @@ export interface VoteLedgerUser {
   isAdmin: boolean;
   createdAt: Date;
   updatedAt: Date;
+  voteBlocks?: VoteBlock[]; // Legacy - will be removed
+  electionBlocks?: { [electionId: string]: VoteBlock[] }; // New: election-specific blockchains
+}
+
+// Vote block for blockchain (election-specific)
+export interface VoteBlock {
+  index: number;
+  timestamp: number;
+  electionId: string; // Election ID is part of the block structure
+  voteData: {
+    candidateId: string;
+    voterHash: string;
+  };
+  previousHash: string;
+  hash: string;
+  nonce: number;
 }
 
 // Candidate interface
@@ -42,6 +58,9 @@ export interface Election {
   candidates: string[];
   createdAt: Date;
   updatedAt: Date;
+  totalVotes?: number;
+  totalVoters?: number;
+  turnoutPercentage?: number;
 }
 
 // Vote interface

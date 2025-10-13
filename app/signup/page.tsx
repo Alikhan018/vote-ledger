@@ -41,28 +41,37 @@ export default function SignUp() {
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
     
+    // Name validation
     if (!formData.name.trim()) {
       newErrors.name = 'Full name is required';
+    } else if (formData.name.trim().length < 2) {
+      newErrors.name = 'Name must be at least 2 characters';
     }
     
+    // CNIC validation
     if (!formData.cnic) {
       newErrors.cnic = 'CNIC is required';
     } else if (!/^\d{5}-\d{7}-\d{1}$/.test(formData.cnic)) {
-      newErrors.cnic = 'CNIC format should be XXXXX-XXXXXXX-X';
+      newErrors.cnic = 'CNIC format should be XXXXX-XXXXXXX-X (e.g., 12345-1234567-1)';
     }
     
+    // Email validation
     if (!formData.email) {
       newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email format is invalid';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
     }
     
+    // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'For better security, use at least 8 characters';
     }
     
+    // Confirm password validation
     if (!formData.confirmPassword) {
       newErrors.confirmPassword = 'Please confirm your password';
     } else if (formData.password !== formData.confirmPassword) {
@@ -121,8 +130,29 @@ export default function SignUp() {
           });
         }
       } else {
-        // Error animation
-        setErrors({ general: result.error || 'Registration failed' });
+        // Handle specific error types
+        const errorMessage = result.error || 'Registration failed';
+        
+        // Check for specific conflict errors
+        if (errorMessage.includes('email already exists')) {
+          setErrors({ 
+            email: 'This email is already registered.',
+            general: 'An account with this email already exists. Try signing in instead or use a different email address.'
+          });
+        } else if (errorMessage.includes('CNIC already exists')) {
+          setErrors({ 
+            cnic: 'This CNIC is already registered.',
+            general: 'An account with this CNIC already exists. Please use a different CNIC number.'
+          });
+        } else if (errorMessage.includes('Invalid email')) {
+          setErrors({ email: 'Please enter a valid email address.' });
+        } else if (errorMessage.includes('Password is too weak')) {
+          setErrors({ password: 'Password is too weak. Please choose a stronger password with at least 6 characters.' });
+        } else {
+          // General error
+          setErrors({ general: errorMessage });
+        }
+        
         if (cardRef.current) {
           gsap.to(cardRef.current, { x: -10, duration: 0.1, yoyo: true, repeat: 5 });
         }
@@ -140,8 +170,34 @@ export default function SignUp() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+    
+    // Clear field-specific error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+    
+    // Clear general error when user makes any change
+    if (errors.general) {
+      setErrors(prev => ({ ...prev, general: '' }));
+    }
+    
+    // Real-time validation for specific fields
+    if (field === 'email' && value) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        setErrors(prev => ({ ...prev, email: 'Please enter a valid email address' }));
+      }
+    }
+    
+    if (field === 'cnic' && value) {
+      if (!/^\d{5}-\d{7}-\d{1}$/.test(value)) {
+        setErrors(prev => ({ ...prev, cnic: 'CNIC format should be XXXXX-XXXXXXX-X (e.g., 12345-1234567-1)' }));
+      }
+    }
+    
+    if (field === 'confirmPassword' && value && formData.password) {
+      if (value !== formData.password) {
+        setErrors(prev => ({ ...prev, confirmPassword: 'Passwords do not match' }));
+      }
     }
   };
 
@@ -248,6 +304,9 @@ export default function SignUp() {
                 {errors.cnic && (
                   <p className="text-sm text-red-400 animate-slide-up">{errors.cnic}</p>
                 )}
+                {!errors.cnic && formData.cnic && /^\d{5}-\d{7}-\d{1}$/.test(formData.cnic) && (
+                  <p className="text-sm text-green-400 animate-slide-up">✓ Valid CNIC format</p>
+                )}
               </div>
               
               <div className="space-y-2">
@@ -267,6 +326,9 @@ export default function SignUp() {
                 />
                 {errors.email && (
                   <p className="text-sm text-red-400 animate-slide-up">{errors.email}</p>
+                )}
+                {!errors.email && formData.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) && (
+                  <p className="text-sm text-green-400 animate-slide-up">✓ Valid email format</p>
                 )}
               </div>
               
@@ -328,6 +390,32 @@ export default function SignUp() {
                 )}
               </div>
             </div>
+            
+            {/* General Error Display */}
+            {errors.general && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 animate-slide-up">
+                <div className="flex items-center space-x-2">
+                  <AlertCircle className="h-5 w-5 text-red-400" />
+                  <p className="text-sm text-red-400 font-medium">{errors.general}</p>
+                </div>
+                {errors.general.includes('email already exists') && (
+                  <div className="mt-3 flex space-x-2">
+                    <Link 
+                      href="/signin"
+                      className="text-xs bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 px-3 py-1 rounded-md transition-colors duration-300"
+                    >
+                      Sign In Instead
+                    </Link>
+                    <button 
+                      onClick={() => setFormData(prev => ({ ...prev, email: '' }))}
+                      className="text-xs bg-gray-500/20 hover:bg-gray-500/30 text-gray-400 px-3 py-1 rounded-md transition-colors duration-300"
+                    >
+                      Use Different Email
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             
             <Button
               onClick={handleSubmit}

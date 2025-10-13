@@ -53,6 +53,32 @@ export interface ElectionStatsResponse extends ApiResponse {
   };
 }
 
+export interface AdminStatsResponse extends ApiResponse {
+  stats?: {
+    overview: {
+      totalUsers: number;
+      totalElections: number;
+      totalVotesAllTime: number;
+      totalCandidates: number;
+      userGrowthPercentage: number;
+      newUsersThisMonth: number;
+    };
+    activeElection: {
+      totalVotes: number;
+      totalVoters: number;
+      turnoutPercentage: number;
+      status: 'upcoming' | 'active' | 'ended';
+      electionTitle: string;
+      electionId: string | null;
+    };
+    system: {
+      uptimePercentage: number;
+      databaseStatus: string;
+      blockchainStatus: string;
+    };
+  };
+}
+
 export class AdminElectionsService extends BaseService {
   private static readonly BASE_URL = '/api/admin/elections';
 
@@ -212,6 +238,37 @@ export class AdminElectionsService extends BaseService {
   }
 
   /**
+   * Update an election
+   */
+  static async updateElection(id: string, data: CreateElectionRequest): Promise<ElectionResponse> {
+    try {
+      const token = this.getToken();
+      if (!token) {
+        return { success: false, error: 'Authentication required' };
+      }
+
+      const response = await this.fetchApi<ElectionResponse>(
+        `${this.BASE_URL}/${id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify(data),
+        }
+      );
+
+      return response;
+    } catch (error: any) {
+      console.error('Update election error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to update election',
+      };
+    }
+  }
+
+  /**
    * Delete an election
    */
   static async deleteElection(id: string): Promise<ApiResponse> {
@@ -297,6 +354,36 @@ export class AdminElectionsService extends BaseService {
       return {
         success: false,
         error: error.message || 'Failed to fetch active election',
+      };
+    }
+  }
+
+  /**
+   * Get comprehensive admin statistics
+   */
+  static async getAdminStats(): Promise<AdminStatsResponse> {
+    try {
+      const token = this.getToken();
+      if (!token) {
+        return { success: false, error: 'Authentication required' };
+      }
+
+      const response = await this.fetchApi<AdminStatsResponse>(
+        '/api/admin/stats',
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      return response;
+    } catch (error: any) {
+      console.error('Get admin stats error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to fetch admin statistics',
       };
     }
   }

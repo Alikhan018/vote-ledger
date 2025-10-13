@@ -18,7 +18,7 @@ export interface CastVoteResponse {
 }
 
 export interface Election {
-  id: string;
+  id?: string;
   title: string;
   description: string;
   startDate: Date;
@@ -30,7 +30,7 @@ export interface Election {
 }
 
 export interface Candidate {
-  id: string;
+  id?: string;
   name: string;
   party: string;
   symbol: string;
