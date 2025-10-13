@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         totalElections: allElections.length,
-        activeElections: activeElections.length,
+        activeElectionsCount: activeElections.length,
         allElections,
         activeElections,
       },

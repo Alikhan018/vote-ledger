@@ -45,12 +45,12 @@ export async function GET(request: NextRequest) {
 
     const allElections = allElectionsSnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data(),
+      ...(doc.data() as any),
       startDate: doc.data().startDate?.toDate(),
       endDate: doc.data().endDate?.toDate(),
       createdAt: doc.data().createdAt?.toDate(),
       updatedAt: doc.data().updatedAt?.toDate(),
-    }));
+    })) as any[];
 
     // Get active elections specifically
     const activeElectionsSnapshot = await db
@@ -60,12 +60,12 @@ export async function GET(request: NextRequest) {
 
     const activeElections = activeElectionsSnapshot.docs.map(doc => ({
       id: doc.id,
-      ...doc.data(),
+      ...(doc.data() as any),
       startDate: doc.data().startDate?.toDate(),
       endDate: doc.data().endDate?.toDate(),
       createdAt: doc.data().createdAt?.toDate(),
       updatedAt: doc.data().updatedAt?.toDate(),
-    }));
+    })) as any[];
 
     const debugInfo = {
       userId,

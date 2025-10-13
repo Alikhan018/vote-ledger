@@ -171,8 +171,9 @@ export async function PUT(
     }
 
     // Get updated election
-    const elections = await DatabaseService.getElections();
-    const election = elections.find(e => e.id === id);
+
+  const updatedElections = await DatabaseService.getElections();
+  const election = updatedElections.find(e => e.id === id);
 
     if (!election) {
       return NextResponse.json(

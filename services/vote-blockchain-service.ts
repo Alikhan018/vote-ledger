@@ -156,6 +156,7 @@ export function isValidBlock(block: VoteBlock, previousBlock: VoteBlock): boolea
   const calculatedHash = calculateBlockHash({
     index: block.index,
     timestamp: block.timestamp,
+    electionId: block.electionId,
     voteData: block.voteData,
     previousHash: block.previousHash,
     nonce: block.nonce,
@@ -225,7 +226,7 @@ export function hasVotedInBlockchain(
   return chain.some(
     block =>
       block.voteData.voterHash === voterHash &&
-      block.voteData.electionId === electionId
+      block.electionId === electionId
   );
 }
 
@@ -239,7 +240,7 @@ export function getVoteCountsFromBlockchain(
   const counts = new Map<string, number>();
 
   chain.forEach(block => {
-    if (block.voteData.electionId === electionId && block.index > 0) {
+    if (block.electionId === electionId && block.index > 0) {
       const candidateId = block.voteData.candidateId;
       counts.set(candidateId, (counts.get(candidateId) || 0) + 1);
     }

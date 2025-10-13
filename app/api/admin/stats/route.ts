@@ -123,8 +123,9 @@ export async function GET(request: NextRequest) {
     // If no active election, find the most recent one
     if (!activeElection && electionsSnapshot.size > 0) {
       const sortedElections = electionsSnapshot.docs
-        .map(doc => ({ ...doc.data(), id: doc.id }))
-        .sort((a, b) => {
+        .map(doc => ({ ...(doc.data() as any), id: doc.id }))
+        .filter((e: any) => e.endDate)
+        .sort((a: any, b: any) => {
           const aDate = a.endDate?.toDate?.() || new Date(a.endDate);
           const bDate = b.endDate?.toDate?.() || new Date(b.endDate);
           return bDate.getTime() - aDate.getTime();
